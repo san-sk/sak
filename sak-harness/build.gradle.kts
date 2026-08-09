@@ -39,6 +39,7 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.androidx.navigation.compose.multiplatform)
             implementation(compose.runtime)
+            implementation(compose.foundation)
             implementation(compose.material3)
         }
         androidMain.dependencies {

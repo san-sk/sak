@@ -9,7 +9,8 @@ internal val harnessDefaultConfigJson: String =
         "bottomBar": {
           "items": [
             { "id": "home", "label": "Home", "icon": "home", "destination": "home" },
-            { "id": "alerts", "label": "Alerts", "icon": "alert", "destination": "alerts" }
+            { "id": "alerts", "label": "Alerts", "icon": "bell", "destination": "alerts" },
+            { "id": "demos", "label": "Demos", "icon": "grid", "destination": "demos" }
           ]
         },
         "destinations": {
@@ -19,7 +20,10 @@ internal val harnessDefaultConfigJson: String =
                 "type": "entries",
                 "refs": [
                   { "feature": "analytics", "entry": "summary-card" },
-                  { "feature": "licensing", "entry": "unlock-card" }
+                  { "feature": "analytics", "entry": "trial-tile" },
+                  { "feature": "licensing", "entry": "unlock-banner" },
+                  { "feature": "licensing", "entry": "plan-row" },
+                  { "feature": "licensing", "entry": "pro-widget" }
                 ]
               }
             ]
@@ -28,17 +32,28 @@ internal val harnessDefaultConfigJson: String =
             "sections": [
               { "type": "query", "categories": ["alerts"], "styles": ["Row"] }
             ]
+          },
+          "demos": {
+            "sections": [
+              { "type": "query", "categories": ["demo"] }
+            ]
           }
         }
       },
       "features": {
-        "licensing": { "enabled": true, "plan": "complete" },
+        "licensing": { "enabled": true, "visible": true, "plan": "trial" },
         "analytics": {
           "enabled": true,
           "visible": true,
           "plan": "trial",
           "grants": ["analytics.summary"],
-          "entries": { "allowed": ["summary-card"] }
+          "entries": { "allowed": ["summary-card", "trial-tile"] }
+        },
+        "demos": {
+          "enabled": true,
+          "visible": true,
+          "plan": "complete",
+          "attrs": { "maxReports": 3, "expiry": "2027-01-01" }
         }
       }
     }

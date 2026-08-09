@@ -12,12 +12,16 @@ import sak.sdk.feature.FeatureId
  * Registered for Android via META-INF/services.
  */
 object LicensingFeatureModule : FeatureModule, FeatureNavigationModule {
+    /** Last created licensing feature instance — screens read its access StateFlow. */
+    var feature: LicensingFeature? = null
+        private set
+
     override val id = FeatureId("licensing")
 
     override fun create(deps: SakDependencies): Feature {
         val provider = deps.licenseProvider as? SampleLicenseProvider
             ?: SampleLicenseProvider()
-        return LicensingFeature(provider)
+        return LicensingFeature(provider).also { feature = it }
     }
 
     override val featureId = id

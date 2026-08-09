@@ -19,7 +19,10 @@ internal val harnessDefaultConfigJson: String =
                 "type": "entries",
                 "refs": [
                   { "feature": "analytics", "entry": "summary-card" },
-                  { "feature": "licensing", "entry": "unlock-card" }
+                  { "feature": "analytics", "entry": "trial-tile" },
+                  { "feature": "licensing", "entry": "unlock-banner" },
+                  { "feature": "licensing", "entry": "plan-row" },
+                  { "feature": "licensing", "entry": "pro-widget" }
                 ]
               }
             ]
@@ -32,13 +35,13 @@ internal val harnessDefaultConfigJson: String =
         }
       },
       "features": {
-        "licensing": { "enabled": true, "plan": "complete" },
+        "licensing": { "enabled": true, "visible": true, "plan": "trial" },
         "analytics": {
           "enabled": true,
           "visible": true,
           "plan": "trial",
           "grants": ["analytics.summary"],
-          "entries": { "allowed": ["summary-card"] }
+          "entries": { "allowed": ["summary-card", "trial-tile"] }
         }
       }
     }

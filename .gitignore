@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+**/build/
+.kotlin/
+
+# Local configuration
+local.properties
+
+# IDE
+.idea/
+
+# Xcode
+xcuserdata/
+**/xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SAK layered-stack mark: config/SDK base (widest) up to UI (topmost). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- bottom layer (config & SDK) -->
+    <path
+        android:fillColor="#8CFFFFFF"
+        android:pathData="M35,56 H73 A5,5 0 0 1 78,61 V61 A5,5 0 0 1 73,66 H35 A5,5 0 0 1 30,61 V61 A5,5 0 0 1 35,56 Z" />
+    <!-- middle layer (runtime) -->
+    <path
+        android:fillColor="#C7FFFFFF"
+        android:pathData="M41,44 H67 A5,5 0 0 1 72,49 V49 A5,5 0 0 1 67,54 H41 A5,5 0 0 1 36,49 V49 A5,5 0 0 1 41,44 Z" />
+    <!-- top layer (UI) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M47,32 H61 A5,5 0 0 1 66,37 V37 A5,5 0 0 1 61,42 H47 A5,5 0 0 1 42,37 V37 A5,5 0 0 1 47,32 Z" />
+    <!-- accent dot -->
+    <path
+        android:fillColor="#FF22D3EE"
+        android:pathData="M78,28.5 a3.5,3.5 0 1 1 0,7 a3.5,3.5 0 1 1 0,-7 Z" />
+</vector>

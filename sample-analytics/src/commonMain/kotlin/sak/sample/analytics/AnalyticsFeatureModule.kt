@@ -12,9 +12,14 @@ import sak.sdk.feature.FeatureId
  * Registered for Android via META-INF/services.
  */
 object AnalyticsFeatureModule : FeatureModule, FeatureNavigationModule {
+    /** Last created analytics feature instance — screens read its access StateFlow. */
+    var feature: AnalyticsFeature? = null
+        private set
+
     override val id = FeatureId("analytics")
 
-    override fun create(deps: SakDependencies): Feature = AnalyticsFeature()
+    override fun create(deps: SakDependencies): Feature =
+        AnalyticsFeature().also { feature = it }
 
     override val featureId = id
 
@@ -22,6 +27,7 @@ object AnalyticsFeatureModule : FeatureModule, FeatureNavigationModule {
         { builder, navController ->
             builder.analyticsNavigation(
                 onNavigate = { route -> navController.navigate(route) },
+                onUpgrade = { navController.navigate("licensing/upgrade") },
                 onBack = { navController.popBackStack() },
             )
         }

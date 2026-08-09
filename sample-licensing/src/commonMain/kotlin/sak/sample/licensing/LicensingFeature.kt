@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import sak.sdk.api.FeatureApi
 import sak.sdk.api.featureApi
+import sak.sdk.config.FeatureToggle
 import sak.sdk.entry.EntryAction
 import sak.sdk.entry.EntryPoint
 import sak.sdk.entry.EntryPointId
@@ -16,7 +17,14 @@ import sak.sdk.feature.FeatureStatus
 import sak.sdk.license.LicenseProvider
 import sak.sdk.navigation.Route
 
-/** Demo licensing feature: unlock entry, upgrade route, exposes [SampleLicenseProvider] as API. */
+/**
+ * Sample licensing feature demonstrating plan-driven upgrade entry points:
+ * - `unlock-banner` (Banner) on Home while on trial — nudges to upgrade.
+ * - `plan-row` (Row) on Home always — shows the current plan.
+ * - `pro-widget` (Widget) on Home once the license is pro.
+ *
+ * Exposes [SampleLicenseProvider] as a [LicenseProvider] API for other features.
+ */
 class LicensingFeature(
     private val licenseProvider: SampleLicenseProvider,
 ) : Feature {
@@ -28,22 +36,17 @@ class LicensingFeature(
     private val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
     override val entryPoints: StateFlow<List<EntryPoint>> = _entryPoints.asStateFlow()
 
+    private val _access = MutableStateFlow<FeatureToggle?>(null)
+    val access: StateFlow<FeatureToggle?> = _access.asStateFlow()
+
     override val routes = listOf(Route("licensing/upgrade"))
 
     override fun apis(): Set<FeatureApi<*>> =
         setOf(featureApi(LicenseProvider::class, licenseProvider))
 
     override suspend fun onActivated(context: FeatureContext) {
-        _entryPoints.value = listOf(
-            EntryPoint(
-                id = EntryPointId("unlock-card"),
-                style = EntryStyle.Card,
-                previewKey = "licensing.unlock",
-                action = EntryAction.Navigate("licensing/upgrade"),
-                priority = 5,
-                categories = setOf("home"),
-            ),
-        )
+        _access.value = context.access
+        publishEntries(context.access)
     }
 
     override suspend fun onDeactivated() {
@@ -52,5 +55,44 @@ class LicensingFeature(
 
     override suspend fun onReset() {
         _status.value = FeatureStatus()
+    }
+
+    override suspend fun onAccessChanged(context: FeatureContext) {
+        _access.value = context.access
+        publishEntries(context.access)
+    }
+
+    private fun publishEntries(access: FeatureToggle) {
+        val pro = access.plan == "pro"
+        val entries = mutableListOf(
+            EntryPoint(
+                id = EntryPointId("plan-row"),
+                style = EntryStyle.Row,
+                previewKey = "licensing.plan",
+                action = EntryAction.Navigate("licensing/upgrade"),
+                priority = 5,
+                categories = setOf("home"),
+            ),
+        )
+        entries += if (pro) {
+            EntryPoint(
+                id = EntryPointId("pro-widget"),
+                style = EntryStyle.Widget,
+                previewKey = "licensing.pro",
+                action = EntryAction.Navigate("licensing/upgrade"),
+                priority = 8,
+                categories = setOf("home"),
+            )
+        } else {
+            EntryPoint(
+                id = EntryPointId("unlock-banner"),
+                style = EntryStyle.Banner,
+                previewKey = "licensing.unlock",
+                action = EntryAction.Navigate("licensing/upgrade"),
+                priority = 9,
+                categories = setOf("home"),
+            )
+        }
+        _entryPoints.value = entries
     }
 }

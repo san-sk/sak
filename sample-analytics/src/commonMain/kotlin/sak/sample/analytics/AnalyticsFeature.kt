@@ -3,6 +3,7 @@ package sak.sample.analytics
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import sak.sdk.config.FeatureToggle
 import sak.sdk.entry.EntryAction
 import sak.sdk.entry.EntryPoint
 import sak.sdk.entry.EntryPointId
@@ -13,7 +14,12 @@ import sak.sdk.feature.FeatureId
 import sak.sdk.feature.FeatureStatus
 import sak.sdk.navigation.Route
 
-/** Demo analytics feature: summary entry, today/report routes, trial vs pro grants. */
+/**
+ * Sample analytics feature demonstrating plan-driven entry points:
+ * - `summary-card` (Card) always shown on Home.
+ * - `trial-tile` (Tile) shown on Home while on the trial plan.
+ * - `report-row` (Row) shown on Alerts once the pro license grants `analytics.reports`.
+ */
 class AnalyticsFeature : Feature {
     override val id = FeatureId("analytics")
 
@@ -23,12 +29,16 @@ class AnalyticsFeature : Feature {
     private val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
     override val entryPoints: StateFlow<List<EntryPoint>> = _entryPoints.asStateFlow()
 
+    private val _access = MutableStateFlow<FeatureToggle?>(null)
+    val access: StateFlow<FeatureToggle?> = _access.asStateFlow()
+
     override val routes = listOf(
         Route("analytics/today"),
         Route("analytics/report/{reportId}"),
     )
 
     override suspend fun onActivated(context: FeatureContext) {
+        _access.value = context.access
         publishEntries(context.access)
     }
 
@@ -41,10 +51,12 @@ class AnalyticsFeature : Feature {
     }
 
     override suspend fun onAccessChanged(context: FeatureContext) {
+        _access.value = context.access
         publishEntries(context.access)
     }
 
-    private fun publishEntries(access: sak.sdk.config.FeatureToggle) {
+    private fun publishEntries(access: FeatureToggle) {
+        val pro = access.plan == "pro" || access.grants.contains("analytics.reports")
         val entries = mutableListOf(
             EntryPoint(
                 id = EntryPointId("summary-card"),
@@ -55,7 +67,17 @@ class AnalyticsFeature : Feature {
                 categories = setOf("home"),
             ),
         )
-        if (access.plan == "pro" || access.grants.contains("analytics.reports")) {
+        if (!pro) {
+            entries += EntryPoint(
+                id = EntryPointId("trial-tile"),
+                style = EntryStyle.Tile,
+                previewKey = "analytics.trial",
+                action = EntryAction.Navigate("analytics/today"),
+                priority = 3,
+                categories = setOf("home"),
+            )
+        }
+        if (pro) {
             entries += EntryPoint(
                 id = EntryPointId("report-row"),
                 style = EntryStyle.Row,

@@ -1,5 +1,6 @@
 package sak.harness
 
+import sak.harness.demo.HarnessDemoFeatureModule
 import sak.sample.analytics.AnalyticsFeatureModule
 import sak.sample.licensing.LicensingFeatureModule
 import sak.sdk.bundle.FeatureModule
@@ -11,4 +12,5 @@ import sak.sdk.bundle.FeatureModule
 internal val harnessBundledFeatureModules: List<FeatureModule> = listOf(
     AnalyticsFeatureModule,
     LicensingFeatureModule,
+    HarnessDemoFeatureModule,
 )
