@@ -1,0 +1,45 @@
+package sak.ios.bridge
+
+/** Embedded demo DefaultConfig for [SakIosHost] (mirrors sak-harness config). */
+internal val harnessDefaultConfigJson: String =
+    """
+    {
+      "version": 1,
+      "scaffold": {
+        "bottomBar": {
+          "items": [
+            { "id": "home", "label": "Home", "icon": "home", "destination": "home" },
+            { "id": "alerts", "label": "Alerts", "icon": "alert", "destination": "alerts" }
+          ]
+        },
+        "destinations": {
+          "home": {
+            "sections": [
+              {
+                "type": "entries",
+                "refs": [
+                  { "feature": "analytics", "entry": "summary-card" },
+                  { "feature": "licensing", "entry": "unlock-card" }
+                ]
+              }
+            ]
+          },
+          "alerts": {
+            "sections": [
+              { "type": "query", "categories": ["alerts"], "styles": ["Row"] }
+            ]
+          }
+        }
+      },
+      "features": {
+        "licensing": { "enabled": true, "plan": "complete" },
+        "analytics": {
+          "enabled": true,
+          "visible": true,
+          "plan": "trial",
+          "grants": ["analytics.summary"],
+          "entries": { "allowed": ["summary-card"] }
+        }
+      }
+    }
+    """.trimIndent()
