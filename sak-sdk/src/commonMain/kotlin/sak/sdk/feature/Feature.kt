@@ -4,44 +4,44 @@ import kotlinx.coroutines.flow.StateFlow
 import sak.sdk.api.FeatureApi
 import sak.sdk.entry.EntryPoint
 import sak.sdk.navigation.Route
+import sak.sdk.navigation.RouteGuard
 
 /**
- * A pluggable business capability (analytics, licensing, messaging, …).
+ * Pluggable business module: routes, entry-point descriptors, optional APIs.
  *
- * Lifecycle is owned by [sak.runtime.FeatureLifecycle], not the Android Activity.
- * The host activates features based on config; features publish widgets and routes reactively.
+ * Runtime calls [onCreate] when [FeatureState] is [FeatureState.Enabled] and [onDestroy] when
+ * policy changes to [FeatureState.Disabled] or [FeatureState.Hidden].
  */
 interface Feature {
-    /** Stable id — must match the key in config `features` and [FeatureModule.id]. */
     val id: FeatureId
 
-    /**
-     * Runtime-visible health and readiness (setup done, needs attention, intro state).
-     * Update this as async initialization completes.
-     */
+    /** Feature-reported UI readiness — not entitlement ([FeatureConfig]). */
     val status: StateFlow<FeatureStatus>
 
     /**
-     * Widgets shown on scaffold destinations (Home, Alerts, …).
-     * Publish in [onActivated] / [onAccessChanged]; clear in [onDeactivated].
+     * UI descriptors for the host to place and render.
+     * Empty when the feature has nothing to expose.
      */
     val entryPoints: StateFlow<List<EntryPoint>>
 
-    /** Internal screens this feature owns (e.g. `analytics/today`). */
+    /** Routes this feature registers in the shared navigation graph. */
     val routes: List<Route>
 
-    /** Optional APIs other features or the host can look up (e.g. [sak.sdk.license.LicenseProvider]). */
+    /** Optional route guards evaluated against live capabilities. */
+    fun routeGuards(): List<RouteGuard> = emptyList()
+
+    /** Typed APIs exported to other features while this instance is loaded. */
     fun apis(): Set<FeatureApi<*>> = emptySet()
 
-    /** Feature became enabled in ActiveConfig — start setup, register screens, publish entry points. */
-    suspend fun onActivated(context: FeatureContext)
+    /** Called when entitlement policy loads this feature. */
+    suspend fun onCreate(context: FeatureContext)
 
-    /** Feature disabled or app shutting down — release resources, clear flows. */
-    suspend fun onDeactivated()
+    /** Called when entitlement policy unloads this feature. */
+    suspend fun onDestroy()
 
-    /** User cleared data or host requested reset — wipe local state. */
-    suspend fun onReset()
+    /** Optional user-driven reset (e.g. clear local state) without unload. */
+    suspend fun onReset() {}
 
-    /** Plan, grants, or entries changed (usually after a license update). */
-    suspend fun onAccessChanged(context: FeatureContext) {}
+    /** Called when capabilities or settings change while the instance stays loaded. */
+    suspend fun onCapabilitiesChanged(context: FeatureContext) {}
 }

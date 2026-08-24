@@ -58,8 +58,8 @@ fun AnalyticsTodayScreen(
     onBack: () -> Unit,
 ) {
     val feature = AnalyticsFeatureModule.feature ?: return
-    val access by feature.access.collectAsState()
-    val pro = access?.plan == "pro" || access?.grants?.contains("analytics.reports") == true
+    val entries by feature.entryPoints.collectAsState()
+    val pro = entries.any { it.id.value == "report-row" }
 
     SakFeatureScreen(
         title = "Analytics",
@@ -69,9 +69,9 @@ fun AnalyticsTodayScreen(
             "Plan-driven feature: Home shows the summary-card (always) and the trial-tile " +
                 "(trial only); Alerts shows report-row once the license grants analytics.reports.",
         )
-        SectionCard("License access") {
-            FieldRow("plan", access?.plan ?: "\u2014")
-            FieldRow("grants", (access?.grants ?: emptySet()).joinToString(", ").ifEmpty { "\u2014" })
+        SectionCard("Capabilities (from entry points)") {
+            FieldRow("loaded entries", entries.map { it.id.value }.joinToString(", "))
+            FieldRow("reports", if (pro) "yes" else "no")
         }
         MetricCard(label = "Events today", value = "42")
         MetricCard(label = "Active users", value = "1.2k")

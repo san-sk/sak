@@ -27,14 +27,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
+import sak.sdk.entry.EntryKind
 import sak.sdk.entry.EntryPoint
-import sak.sdk.entry.EntryStyle
 import sak.sdk.feature.FeatureId
 
 /**
- * Renders one entry-point widget on a scaffold destination, styled by [EntryPoint.style]:
- * [EntryStyle.Card], [EntryStyle.Row], [EntryStyle.Banner], [EntryStyle.Tile],
- * [EntryStyle.Widget], or [EntryStyle.Custom] (falls back to card).
+ * Renders one entry-point widget styled by [EntryPoint.kind].
  */
 @Composable
 fun SakEntryWidget(
@@ -46,12 +44,14 @@ fun SakEntryWidget(
     val accent = remember(featureId) { entryAccentColor(featureId) }
     val title = entry.id.value.replace('-', ' ').replaceFirstChar { it.uppercase() }
 
-    when (entry.style) {
-        EntryStyle.Row -> SakRowWidget(featureId, title, accent, onClick, modifier)
-        EntryStyle.Banner -> SakBannerWidget(featureId, title, accent, onClick, modifier)
-        EntryStyle.Tile -> SakTileWidget(featureId, title, accent, onClick, modifier)
-        EntryStyle.Widget -> SakWidgetWidget(featureId, title, accent, onClick, modifier)
-        EntryStyle.Card, EntryStyle.Custom -> SakCardWidget(featureId, entry, title, accent, onClick, modifier)
+    when (entry.kind) {
+        EntryKind.Row -> SakRowWidget(featureId, title, accent, onClick, modifier)
+        EntryKind.Banner -> SakBannerWidget(featureId, title, accent, onClick, modifier)
+        EntryKind.Tile -> SakTileWidget(featureId, title, accent, onClick, modifier)
+        EntryKind.Dashboard -> SakWidgetWidget(featureId, title, accent, onClick, modifier)
+        EntryKind.Card, EntryKind.Custom, EntryKind.Alert,
+        EntryKind.Switch, EntryKind.Fab, EntryKind.ActionItem, EntryKind.Progress,
+        -> SakCardWidget(featureId, entry, title, accent, onClick, modifier)
     }
 }
 
@@ -89,7 +89,7 @@ private fun SakCardWidget(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            StyleTag(entry.style, accent)
+            KindTag(entry.kind, accent)
             Spacer(Modifier.width(8.dp))
             Text(
                 text = "\u203A",
@@ -283,13 +283,13 @@ private fun LeadingBadge(
 }
 
 @Composable
-private fun StyleTag(style: EntryStyle, accent: Color) {
+private fun KindTag(kind: EntryKind, accent: Color) {
     Surface(
         shape = RoundedCornerShape(50),
         color = accent.copy(alpha = 0.12f),
     ) {
         Text(
-            text = style.name,
+            text = kind.name,
             style = MaterialTheme.typography.labelSmall,
             color = accent,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),

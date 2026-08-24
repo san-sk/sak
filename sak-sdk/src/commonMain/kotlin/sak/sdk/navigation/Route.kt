@@ -1,4 +1,6 @@
 package sak.sdk.navigation
 
-/** A route string in the shared NavHost (e.g. `analytics/today`, `scaffold/home`). */
+/**
+ * Route string in the shared navigation graph (e.g. `analytics/today`, `licensing/upgrade`).
+ */
 data class Route(val value: String)

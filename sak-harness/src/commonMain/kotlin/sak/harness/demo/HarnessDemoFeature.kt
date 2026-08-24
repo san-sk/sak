@@ -4,16 +4,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import sak.sdk.api.FeatureApiDescriptor
-import sak.sdk.config.FeatureToggle
 import sak.sdk.entry.EntryAction
+import sak.sdk.entry.EntryKind
 import sak.sdk.entry.EntryPoint
 import sak.sdk.entry.EntryPointId
-import sak.sdk.entry.EntryStyle
-import sak.sdk.feature.Attention
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureContext
 import sak.sdk.feature.FeatureId
 import sak.sdk.feature.FeatureStatus
+import sak.sdk.feature.IntroState
 import sak.sdk.license.LicenseProvider
 import sak.sdk.navigation.Route
 
@@ -26,9 +25,6 @@ class HarnessDemoFeature : Feature {
 
     private val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
     override val entryPoints: StateFlow<List<EntryPoint>> = _entryPoints.asStateFlow()
-
-    private val _access = MutableStateFlow<FeatureToggle?>(null)
-    val access: StateFlow<FeatureToggle?> = _access.asStateFlow()
 
     private val _log = MutableStateFlow<List<String>>(emptyList())
     val log: StateFlow<List<String>> = _log.asStateFlow()
@@ -46,22 +42,21 @@ class HarnessDemoFeature : Feature {
 
     private var context: FeatureContext? = null
 
-    override suspend fun onActivated(context: FeatureContext) {
+    override suspend fun onCreate(context: FeatureContext) {
         this.context = context
-        _access.value = context.access
-        append("onActivated (plan=${context.access.plan})")
+        append("onCreate (license=${context.licenseType.value})")
         _entryPoints.value = demoEntries()
     }
 
-    override suspend fun onAccessChanged(context: FeatureContext) {
-        _access.value = context.access
-        append("onAccessChanged (plan=${context.access.plan})")
+    override suspend fun onCapabilitiesChanged(context: FeatureContext) {
+        append("onCapabilitiesChanged (license=${context.licenseType.value})")
         _entryPoints.value = demoEntries()
     }
 
-    override suspend fun onDeactivated() {
-        append("onDeactivated")
+    override suspend fun onDestroy() {
+        append("onDestroy")
         _entryPoints.value = emptyList()
+        context = null
     }
 
     override suspend fun onReset() {
@@ -74,9 +69,9 @@ class HarnessDemoFeature : Feature {
         append("status.setupComplete = $done")
     }
 
-    fun setAttention(attention: Attention) {
-        _status.value = _status.value.copy(attention = attention)
-        append("status.attention = $attention")
+    fun setIntroState(intro: IntroState) {
+        _status.value = _status.value.copy(intro = intro)
+        append("status.intro = $intro")
     }
 
     fun findLicenseProvider(): LicenseProvider? = context?.apis?.find(LicenseProvider::class)
@@ -103,10 +98,9 @@ class HarnessDemoFeature : Feature {
 
     private fun demoEntry(id: String, route: String, priority: Int) = EntryPoint(
         id = EntryPointId(id),
-        style = EntryStyle.Card,
-        previewKey = "demo.$id",
+        kind = EntryKind.Card,
+        tags = setOf("demo"),
         action = EntryAction.Navigate("demos/$route"),
         priority = priority,
-        categories = setOf("demo"),
     )
 }

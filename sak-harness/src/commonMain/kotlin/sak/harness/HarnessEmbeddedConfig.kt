@@ -4,56 +4,21 @@ package sak.harness
 internal val harnessDefaultConfigJson: String =
     """
     {
-      "version": 1,
-      "scaffold": {
-        "bottomBar": {
-          "items": [
-            { "id": "home", "label": "Home", "icon": "home", "destination": "home" },
-            { "id": "alerts", "label": "Alerts", "icon": "bell", "destination": "alerts" },
-            { "id": "demos", "label": "Demos", "icon": "grid", "destination": "demos" }
-          ]
-        },
-        "destinations": {
-          "home": {
-            "sections": [
-              {
-                "type": "entries",
-                "refs": [
-                  { "feature": "analytics", "entry": "summary-card" },
-                  { "feature": "analytics", "entry": "trial-tile" },
-                  { "feature": "licensing", "entry": "unlock-banner" },
-                  { "feature": "licensing", "entry": "plan-row" },
-                  { "feature": "licensing", "entry": "pro-widget" }
-                ]
-              }
-            ]
-          },
-          "alerts": {
-            "sections": [
-              { "type": "query", "categories": ["alerts"], "styles": ["Row"] }
-            ]
-          },
-          "demos": {
-            "sections": [
-              { "type": "query", "categories": ["demo"] }
-            ]
-          }
-        }
-      },
+      "schema": 1,
+      "license": { "type": "trial" },
       "features": {
-        "licensing": { "enabled": true, "visible": true, "plan": "trial" },
+        "licensing": {
+          "state": "enabled",
+          "capabilities": []
+        },
         "analytics": {
-          "enabled": true,
-          "visible": true,
-          "plan": "trial",
-          "grants": ["analytics.summary"],
-          "entries": { "allowed": ["summary-card", "trial-tile"] }
+          "state": "enabled",
+          "capabilities": ["analytics.summary"]
         },
         "demos": {
-          "enabled": true,
-          "visible": true,
-          "plan": "complete",
-          "attrs": { "maxReports": 3, "expiry": "2027-01-01" }
+          "state": "enabled",
+          "capabilities": ["demos.all"],
+          "settings": { "maxReports": 3, "expiry": "2027-01-01" }
         }
       }
     }

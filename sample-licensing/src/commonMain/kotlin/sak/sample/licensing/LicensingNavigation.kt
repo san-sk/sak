@@ -39,8 +39,8 @@ fun LicensingUpgradeScreen(
     onBack: () -> Unit,
 ) {
     val feature = LicensingFeatureModule.feature ?: return
-    val access by feature.access.collectAsState()
-    val pro = access?.plan == "pro"
+    val entries by feature.entryPoints.collectAsState()
+    val pro = entries.any { it.id.value == "pro-widget" }
 
     SakFeatureScreen(
         title = "Licensing",
@@ -52,8 +52,8 @@ fun LicensingUpgradeScreen(
                 "grant (report-row on Alerts) and licensing swaps its unlock-banner for a pro-widget.",
         )
         SectionCard("License state") {
-            FieldRow("plan", access?.plan ?: "\u2014")
-            FieldRow("grants", (access?.grants ?: emptySet()).joinToString(", ").ifEmpty { "\u2014" })
+            FieldRow("pro entries", if (pro) "pro-widget" else "unlock-banner")
+            FieldRow("entry ids", entries.map { it.id.value }.joinToString(", "))
         }
         Spacer(Modifier.height(4.dp))
         if (pro) {

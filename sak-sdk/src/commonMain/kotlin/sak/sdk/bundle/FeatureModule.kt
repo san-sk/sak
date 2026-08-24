@@ -1,24 +1,24 @@
 package sak.sdk.bundle
 
+import sak.sdk.config.AppConfig
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureId
-import sak.sdk.license.LicenseProvider
-
-/** Dependencies the host passes when creating bundled features. */
-data class SakDependencies(
-    /** Optional license source; often the licensing feature's [sak.sdk.license.LicenseProvider]. */
-    val licenseProvider: LicenseProvider? = null,
-)
+import sak.sdk.feature.FeatureState
 
 /**
- * One installable feature module: stable id + factory.
+ * Installable feature: stable [id] and a factory for [Feature] instances.
  *
- * Register for auto-discovery on Android:
- * `META-INF/services/sak.sdk.bundle.FeatureModule` → your module object class name.
- * On iOS, list modules manually in the host app.
+ * Registered at build time; runtime calls [create] when entitlement [FeatureState] is [FeatureState.Enabled].
+ *
+ * - **Android:** optional ServiceLoader — `META-INF/services/sak.sdk.bundle.FeatureModule`
+ * - **iOS:** host passes modules in `SakHostSetup.bundledModules` at launch
+ *
+ * Host dependencies (providers, services) are **not** passed here — configure
+ * [sak.runtime.SakHostSetup] and inject via module constructor when a factory needs them.
  */
 interface FeatureModule {
+    /** Stable id (e.g. `analytics`). Must match [AppConfig.features] keys. */
     val id: FeatureId
-    /** Create a new feature instance (one per app process when activated). */
-    fun create(deps: SakDependencies): Feature
+
+    fun create(): Feature
 }

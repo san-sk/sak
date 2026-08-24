@@ -1,35 +1,27 @@
 package sak.sdk.feature
 
-/** How urgently the user should notice this feature (badges, alerts tab, banners). */
-enum class Attention {
-    /** No badge or highlight. */
-    None,
-    /** Subtle indicator (dot, muted badge). */
-    Low,
-    /** Standard attention (badge count, banner). */
-    Medium,
-    /** Urgent (persistent banner, high-priority alert). */
-    High,
-}
-
-/** First-run / onboarding state for this feature. */
-enum class IntroState {
-    /** User must complete onboarding before normal use. */
-    Required,
-    Done,
-    NotApplicable,
-}
-
 /**
- * Feature-reported state. Observed by the host shell for badges, setup gates, and readiness.
+ * Feature-reported UI state — distinct from entitlement ([FeatureConfig]).
  *
- * Config `enabled`/`visible` control activation; [setupComplete] is the feature's own init signal.
+ * Alerts and sorting use [sak.sdk.entry.EntryPoint.priority] and payload, not this type.
  */
 data class FeatureStatus(
-    val enabled: Boolean = true,
-    val visible: Boolean = true,
-    /** True when internal init finished (SDK connected, cache loaded, permissions granted). */
+    /** Technical init finished (SDK wired, cache warm, permissions granted, …). */
     val setupComplete: Boolean = true,
-    val attention: Attention = Attention.None,
-    val introSeen: IntroState = IntroState.Done,
+    /** First-run / what's-new state for this feature. */
+    val intro: IntroState = IntroState.NotApplicable,
 )
+
+/**
+ * Intro / what's-new gating for a feature.
+ *
+ * Distinct from [FeatureStatus.setupComplete] (technical readiness).
+ */
+enum class IntroState {
+    /** No intro flow for this feature. */
+    NotApplicable,
+    /** User should see intro or what's-new. */
+    Required,
+    /** User completed or dismissed intro. */
+    Completed,
+}

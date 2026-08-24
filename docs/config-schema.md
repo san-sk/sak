@@ -1,170 +1,77 @@
-# App Config JSON Schema
+# App config JSON schema
 
-**Schema version:** `1`  
-**Guides:** [ARCHITECTURE.md](ARCHITECTURE.md) · [ANDROID.md](ANDROID.md) · [IOS.md](IOS.md)
+**Schema:** `schema: 1`  
+**Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
----
-
-## Overview
-
-| Source | Contains |
-|---|---|
-| **DefaultConfig** | `scaffold` + `features` |
-| **License overlay** | `features` only (signed) |
-| **ActiveConfig** | `merge(default, license)` |
+Entitlement document only — **no scaffold, no tab layout**.
 
 ---
 
-## Root — DefaultConfig
+## Shape
 
 ```json
 {
-  "version": 1,
-  "scaffold": { ... },
-  "features": { ... }
-}
-```
-
----
-
-## `scaffold` — app chrome (DefaultConfig only, KMP naming)
-
-Uses Compose / Material terms: **Scaffold**, **bottomBar**, **destinations**.
-
-```json
-{
-  "scaffold": {
-    "bottomBar": {
-      "items": [
-        { "id": "home", "label": "Home", "icon": "home", "destination": "home" },
-        { "id": "alerts", "label": "Alerts", "icon": "bell", "destination": "alerts" },
-        { "id": "profile", "label": "Profile", "icon": "person", "destination": "profile" }
-      ]
-    },
-    "destinations": {
-      "home": {
-        "sections": [
-          {
-            "type": "entries",
-            "refs": [
-              { "feature": "analytics", "entry": "summary-card" },
-              { "feature": "messaging", "entry": "recent-card" }
-            ]
-          },
-          { "type": "query", "categories": ["home"], "styles": ["Card"] }
-        ]
-      },
-      "alerts": {
-        "sections": [{ "type": "query", "categories": ["alerts"] }]
-      }
+  "schema": 1,
+  "license": {
+    "type": "trial",
+    "rev": "optional-backend-revision"
+  },
+  "features": {
+    "analytics": {
+      "state": "enabled",
+      "capabilities": ["analytics.summary"],
+      "settings": { "refreshMinutes": 15 }
     }
   }
 }
 ```
 
-| Field | Description |
-|---|---|
-| `bottomBar.items` | Bottom navigation bar entries (Material `NavigationBar`) |
-| `destination` | Route to scaffold destination: `scaffold/{destination}` in NavHost |
-| `destinations` | Map of destination id → widget layout sections |
-
-**Never in license overlay.**
-
----
-
-## Section types
-
-**entries:** `{ "type": "entries", "refs": [{ "feature": "...", "entry": "..." }] }`
-
-**query:** `{ "type": "query", "categories": ["menu"], "styles": ["Row"] }`
-
----
-
-## `features` — flexible access
-
-```json
-{
-  "features": {
-    "licensing": { "enabled": true, "plan": "complete" },
-    "analytics": {
-      "enabled": true,
-      "visible": true,
-      "plan": "trial",
-      "grants": ["analytics.summary"],
-      "entries": { "allowed": ["summary-card"] },
-      "attrs": { "maxReports": 3 }
-    },
-    "billing": {
-      "enabled": false,
-      "visible": false,
-      "plan": "none",
-      "grants": []
-    }
-  }
-}
-```
-
-| Field | Runtime | Feature interprets |
-|---|---|---|
-| `enabled` | lifecycle | — |
-| `visible` | shell filter | — |
-| `plan` | pass-through | business tier string |
-| `grants` | pass-through | capability strings |
-| `entries` | widget filter | — |
-| `routes` | nav guard (optional) | — |
-| `attrs` | pass-through | quotas, expiry, etc. |
-
-`plan` and `grants` are opaque — features interpret them. Runtime enforces `enabled`, `visible`, `entries`, and optional `routes`.
-
----
-
-## License overlay
-
-```json
-{
-  "version": 1,
-  "features": {
-    "analytics": {
-      "plan": "pro",
-      "grants": ["analytics.summary", "analytics.reports"],
-      "entries": null
-    },
-    "billing": { "enabled": true, "plan": "pro" }
-  }
-}
-```
-
-No `scaffold` key.
-
----
-
-## Merge rules
-
-```text
-scaffold: always from DefaultConfig
-features: deep-merge; license wins per feature id
-```
-
----
-
-## SDK mapping
-
-| JSON | Kotlin |
-|---|---|
-| `scaffold` | `ScaffoldConfig` |
-| `bottomBar` | `BottomBarConfig` |
-| `destinations` | `DestinationLayouts` |
-| Feature toggle | `FeatureToggle` |
-| Root | `AppConfig` |
-
----
-
-## Security
-
-| Layer | Role |
+| Field | Role |
 |-------|------|
-| DefaultConfig | Baseline access shipped in APK |
-| Signed license overlay | Updates `features` only — verify with `LicenseVerifier` |
-| Backend APIs | **Required** for real enforcement (config alone is UI gating) |
+| `license.type` | Display label (guest, trial, pro) — **not used for gating** |
+| `license.rev` | Optional cache / staleness hint |
+| `features.{id}.state` | `enabled` \| `disabled` \| `hide` — load policy |
+| `features.{id}.capabilities` | Strings for UI locks and route guards |
+| `features.{id}.settings` | Opaque JSON — feature interprets; runtime pass-through |
 
-Client JSON can be modified for UI; premium actions must fail on the server without a valid entitlement.
+---
+
+## Sources (same shape everywhere)
+
+| Source | Example |
+|--------|---------|
+| Bundled default | `assets/default-config.json` |
+| Login / backend | `EntitlementConfigProvider` |
+| Signed overlay | `LicenseProvider` + verifier |
+
+Runtime: `default.mergeEntitlementOverlay(overlay)` → **ActiveConfig**.
+
+Overlay wins for `state`, `capabilities`, and `license`; `settings` shallow-merge per feature id.
+
+---
+
+## `state` values
+
+| JSON | Runtime |
+|------|---------|
+| `enabled` | `Feature.onCreate()` |
+| `disabled` | `Feature.onDestroy()` — host may show locked UI |
+| `hide` | `Feature.onDestroy()` — host hides all surfaces for id |
+
+---
+
+## Kotlin types
+
+| JSON | Type |
+|------|------|
+| Root | `sak.sdk.config.AppConfig` |
+| `license` | `sak.sdk.license.LicenseInfo` |
+| Feature row | `sak.sdk.feature.FeatureConfig` |
+| `state` enum | `sak.sdk.feature.FeatureState` |
+| Codec | `sak.sdk.config.ConfigJson` |
+
+---
+
+## Entry placement (not in this JSON)
+
+Features publish `EntryPoint` with `tags` (e.g. `home`, `alerts`). Host shell maps tags to tabs — see [ARCHITECTURE.md §7](ARCHITECTURE.md#7-entry-points--shell).

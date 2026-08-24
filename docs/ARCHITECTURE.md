@@ -1,373 +1,320 @@
-# SAK architecture — SDK & runtime
+# SAK architecture
 
-Visual guide to how `sak-sdk`, `sak-runtime`, and `sak-compose-ui` work together on Android and iOS.
+Lean multi-feature framework for Kotlin Multiplatform: **entitlement drives load**, **host owns shell**, **features own business**.
 
-**Related:** [config-schema.md](config-schema.md) · [ANDROID.md](ANDROID.md) · [IOS.md](IOS.md)
-
----
-
-## 1. Module layers
-
-`sak-sdk` has **no Compose** — pure contracts. `sak-runtime` implements the engine. UI lives in `sak-compose-ui` and feature modules.
-
-```mermaid
-flowchart TB
-    subgraph Host["Host app (sak-harness)"]
-        H[MainActivity / MainViewController]
-    end
-
-    subgraph UI["sak-compose-ui"]
-        SA[SakApp — scaffold + NavHost]
-    end
-
-    subgraph Runtime["sak-runtime"]
-        SL[SakLauncher]
-        SR[SakRuntime]
-        FL[FeatureLifecycle]
-        SCR[ScaffoldRenderer]
-        AR[ApiRegistry]
-    end
-
-    subgraph SDK["sak-sdk"]
-        F[Feature]
-        CFG[AppConfig / FeatureToggle]
-        EP[EntryPoint]
-        FM[FeatureModule]
-    end
-
-    subgraph Features["Feature modules"]
-        A[sample-analytics]
-        L[sample-licensing]
-    end
-
-    H --> SA
-    SA --> SR
-    SL --> SR
-    SR --> FL
-    SR --> SCR
-    SR --> AR
-    FL --> F
-    SCR --> EP
-    SCR --> CFG
-    FM --> F
-    A --> F
-    L --> F
-    A --> EP
-    L --> EP
-```
-
-| Module | Responsibility |
-|--------|----------------|
-| **sak-sdk** | `Feature`, `FeatureStatus`, config types, `EntryPoint`, `FeatureModule`, license contracts |
-| **sak-runtime** | Config merge, activate/deactivate features, build `RenderPlan`, API registry, navigation signals |
-| **sak-compose-ui** | `SakApp` — bottom bar, scaffold destinations, single `NavHost` |
-| **Feature module** | Business logic, entry widgets, internal screens, optional `FeatureApi` |
+**Also:** [config-schema.md](config-schema.md) · [ANDROID.md](ANDROID.md) · [IOS.md](IOS.md)
 
 ---
 
-## 2. Launch flow (host → runtime → UI)
+## 1. Three roles (read this first)
 
-Same sequence on Android and iOS. Platform code only provides the Compose root.
-
-```mermaid
-flowchart TD
-    A[Host loads DefaultConfig JSON] --> B[discoverFeatureModules]
-    B --> C[SakLauncher.launch]
-    C --> D[SakRuntime.start]
-    D --> E{LicenseProvider?}
-    E -->|yes| F[resolveLicense + subscribe updates]
-    E -->|no| G[use DefaultConfig only]
-    F --> H[mergeLicenseOverlay]
-    G --> H
-    H --> I[FeatureLifecycle.apply]
-    I --> J[ScaffoldRenderer.build]
-    J --> K[RenderPlan in StateFlow]
-    K --> L[SakApp collects renderPlan]
-    L --> M[Draw bottom bar + destinations + NavHost]
-```
-
-**Host code pattern** (`HarnessApp.kt`):
-
-1. `discoverFeatureModules(...)` → list of `FeatureModule`
-2. `SakLauncher(scope).launch(defaultConfig, featureModules, deps)` → `SakRuntime`
-3. `SakApp(runtime, featureNavContributors = modules.navContributors(deps))`
-
----
-
-## 3. Config merge
-
-Scaffold comes **only** from DefaultConfig. License overlay updates **features** only.
+| Role | Question they answer | Touches |
+|------|----------------------|---------|
+| **Host** | How is the app wired? Shell, providers, discovery list | `SakHost`, `SakHostSetup`, shell tabs |
+| **Runtime** | What is loaded right now? | `SakRuntime`, merge, lifecycle, `RenderPlan` |
+| **Feature** | What does my module expose? | `Feature`, `EntryPoint`, routes, APIs |
 
 ```mermaid
 flowchart LR
-    subgraph Sources
-        DC[DefaultConfig<br/>scaffold + features]
-        LO[License overlay<br/>features only]
+    subgraph Host
+        H[Shell UI]
+        P[Providers]
+        D[Discovery]
     end
-
     subgraph Runtime
-        M[mergeLicenseOverlay]
-        AC[ActiveConfig]
+        R[SakRuntime]
     end
-
-    DC --> M
-    LO --> M
-    M --> AC
-    DC -->|scaffold preserved| AC
+    subgraph Features
+        F1[analytics]
+        F2[licensing]
+    end
+    D --> R
+    P --> R
+    R --> F1
+    R --> F2
+    F1 -->|entryPoints| R
+    F2 -->|entryPoints| R
+    R -->|RenderPlan| H
 ```
 
+**Rule:** entitlement JSON never defines tabs or layout. It only defines **which features load** and **what they may do**.
+
+---
+
+## 2. Module layers
+
+| Module | Responsibility | Compose? |
+|--------|----------------|----------|
+| **sak-sdk** | Contracts + entitlement types | No |
+| **sak-runtime** | Engine: merge, lifecycle, catalog, navigation gate | No |
+| **sak-compose-ui** | Reference shell (`SakApp`) — optional | Yes |
+| **Feature libs** | Business modules (`sample-analytics`, …) | Yes (their screens) |
+
 ```mermaid
-flowchart TD
-    AC[ActiveConfig] --> FL[FeatureLifecycle]
-    FL -->|enabled=true| ON[onActivated]
-    FL -->|enabled=false| OFF[onDeactivated]
-    FL -->|plan/grants change| CH[onAccessChanged]
-    ON --> EP[Feature publishes entryPoints]
-    ON --> ST[Feature updates status]
-    CH --> EP
+flowchart TB
+    HostApp[sak-harness / your app]
+    ComposeUI[sak-compose-ui optional]
+    Runtime[sak-runtime]
+    SDK[sak-sdk]
+    Features[feature modules]
+
+    HostApp --> ComposeUI
+    HostApp --> Runtime
+    ComposeUI --> Runtime
+    Runtime --> SDK
+    Features --> SDK
+    Features --> ComposeUI
 ```
 
 ---
 
-## 4. Feature lifecycle
+## 3. Two pipelines (do not confuse them)
 
-Lifecycle is **application-scoped** (process lifetime), not Activity / UIViewController lifecycle.
+### A. Discovery — “what is installed?”
+
+Build time / classpath. Does **not** load features.
+
+| Platform | Mechanism |
+|----------|-----------|
+| Android | `ServiceLoader` + `META-INF/services/sak.sdk.bundle.FeatureModule` |
+| iOS | Manual `List<FeatureModule>` in host |
+
+```kotlin
+discoverFeatureModules(manualModules = listOf(AnalyticsFeatureModule, …))
+```
+
+### B. Entitlement — “what may run?”
+
+Runtime. Reads **AppConfig** (bundled default + overlay).
+
+| `FeatureState` | Runtime |
+|----------------|---------|
+| `enabled` | `Feature.onCreate()` |
+| `disabled` | `onDestroy()` — host may show locked UI |
+| `hide` | `onDestroy()` — host hides surfaces |
+
+```json
+"analytics": {
+  "state": "enabled",
+  "capabilities": ["analytics.summary"],
+  "settings": { }
+}
+```
+
+A feature can be **discovered** but **not loaded** if `state` is not `enabled`.
+
+---
+
+## 4. Host integration (minimal path)
+
+```kotlin
+val licenseProvider = SampleLicenseProvider()
+LicensingFeatureModule.licenseProvider = licenseProvider  // if module needs same instance
+
+val host = SakHost(
+    scope = appScope,
+    setup = SakHostSetup(
+        defaultConfig = bundledConfig,
+        bundledModules = listOf(AnalyticsFeatureModule, …),
+        licenseProvider = licenseProvider,
+        entitlementProvider = myEntitlementProvider,
+        appServices = AppServiceRegistry(mapOf(LogService::class to logService)),
+    ),
+)
+val runtime = host.start()
+```
+
+**Compose:** `SakApp(runtime, featureNavContributors = host.modules().navContributors())`
+
+**Without Compose:** observe `RenderPlan` in Swift/UIKit (`SakIosHost` pattern).
+
+---
+
+## 5. Launch sequence
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Inactive: feature disabled in config
-    Inactive --> Active: enabled in ActiveConfig
-    Active --> Inactive: disabled or runtime shutdown
-    Active --> Active: onAccessChanged (license update)
+sequenceDiagram
+    participant Host
+    participant SakHost
+    participant Runtime
+    participant Lifecycle
+    participant Feature
 
-    state Active {
-        [*] --> Setup
-        Setup --> Ready: setupComplete = true
-        Ready --> Ready: publish entryPoints
-        Ready --> Alert: attention = High
-        Alert --> Ready: user action
-    }
+    Host->>SakHost: start()
+    SakHost->>SakHost: discoverFeatureModules()
+    SakHost->>Runtime: SakLauncher.launch()
+    Runtime->>Runtime: mergeEntitlementOverlay()
+    Runtime->>Lifecycle: apply(ActiveConfig)
+    loop each feature id
+        alt state = enabled
+            Lifecycle->>Feature: onCreate(context)
+        else disabled / hide
+            Lifecycle->>Feature: onDestroy()
+        end
+    end
+    Runtime->>Runtime: EntryResolver → RenderPlan
+    Note over Host: Provider updates re-merge + onCapabilitiesChanged
 ```
+
+**Providers**
+
+| Type | Use when |
+|------|----------|
+| `EntitlementConfigProvider` | Login / IAP / backend JSON (unsigned) — preferred |
+| `LicenseProvider` | Signed payloads + verifier |
+
+---
+
+## 6. SDK package map (who reads what)
+
+| Package | For | Key types |
+|---------|-----|-----------|
+| `sak.sdk.bundle` | Host + feature registration | `FeatureModule` |
+| `sak.sdk.config` | Host + runtime | `AppConfig`, `ConfigJson`, merge |
+| `sak.sdk.license` | Host | `LicenseInfo`, providers, `FeatureEntitlement` |
+| `sak.sdk.feature` | Feature teams | `Feature`, `FeatureContext`, `FeatureConfig`, `FeatureState` |
+| `sak.sdk.entry` | Feature teams | `EntryPoint`, `EntryKind`, `EntryAction` |
+| `sak.sdk.navigation` | Feature teams | `Route`, `RouteGuard` |
+| `sak.sdk.api` / `service` | Feature + host | `FeatureApi`, `AppServiceLookup` |
+
+### Host setup vs feature runtime
+
+| | `SakHostSetup` | `FeatureContext` |
+|--|----------------|------------------|
+| **When** | App launch | While feature is loaded |
+| **Contains** | Config, providers, services, module list | Capabilities, settings flows, navigate, APIs |
+
+### Module vs instance
+
+| | `FeatureModule` | `Feature` |
+|--|-----------------|-----------|
+| **Lifetime** | App install | Loaded instance |
+| **Factory** | `create()` — no host args | `onCreate(context)` |
+
+---
+
+## 7. Entry points & shell
+
+Features publish **descriptors**, not views:
+
+```kotlin
+EntryPoint(
+    id = EntryPointId("summary-card"),
+    kind = EntryKind.Card,
+    tags = setOf("home"),           // host placement hint
+    priority = 10,
+    action = EntryAction.Navigate("analytics/today"),
+)
+```
+
+Runtime builds **`RenderPlan`**:
+
+- `entries` — flat list from loaded features
+- `byTag` / `entriesForTag("home")` — for shell tabs
+
+**Shell** (tabs, bottom bar) is **host-owned**:
+
+- Compose: `HostShellDestination` + `SakApp(shellDestinations = …)` in `sak-compose-ui`
+- Native: host defines tabs, calls `entriesForTag(tabId)`
+
+---
+
+## 8. Navigation
+
+One shared graph:
+
+- Scaffold routes: `scaffold/home` (reference `SakApp`)
+- Feature routes: `analytics/today`, `licensing/upgrade`
+- Entry tap → `EntryAction.Navigate` / `DeepLink`
+- In-feature → `FeatureContext.navigate(Route)`
+- Runtime → `navigationRoute` one-shot `StateFlow`
+
+`NavigationGate` evaluates `RouteGuard` against live **capabilities** before emitting navigation.
+
+---
+
+## 9. Config merge
+
+```mermaid
+flowchart LR
+    DC[DefaultConfig bundled JSON]
+    OV[Overlay login / IAP / signed]
+    M[mergeEntitlementOverlay]
+    AC[ActiveConfig]
+    DC --> M
+    OV --> M
+    M --> AC
+```
+
+Overlay patches **license** + listed **features** (`state`, `capabilities`, shallow-merge `settings`). No scaffold in JSON.
+
+---
+
+## 10. Feature lifecycle
+
+Application-scoped (process lifetime), not Activity / VC lifecycle.
 
 | Callback | When |
 |----------|------|
-| `onActivated` | Feature becomes `enabled` — start init, register screens, publish entry points |
-| `onAccessChanged` | `plan`, `grants`, or `entries` changed (usually license) |
-| `onDeactivated` | Feature disabled or app shutting down — clear flows, release resources |
-| `onReset` | User clear-data — wipe feature local state |
+| `onCreate` | `state` → enabled |
+| `onDestroy` | `state` → disabled / hide |
+| `onCapabilitiesChanged` | Still enabled; capabilities or settings changed |
+| `onReset` | User clear-data (optional) |
 
-**Readiness:** feature sets `FeatureStatus.setupComplete`. Config `enabled` turns the feature on; `setupComplete` means it is safe to use.
-
----
-
-## 5. Scaffold & entry points
-
-Config defines **where** widgets appear. Features define **what** widgets exist.
-
-```mermaid
-flowchart TB
-    subgraph Config["default-config.json scaffold"]
-        BB[bottomBar: home, alerts, profile]
-        DEST[destinations per tab]
-        SEC[sections: entries | query]
-    end
-
-    subgraph Feature["Active feature"]
-        EPL[entryPoints StateFlow]
-        ST[status StateFlow]
-    end
-
-    subgraph Runtime["ScaffoldRenderer"]
-        RP[RenderPlan]
-    end
-
-    subgraph UI["SakApp"]
-        NAV[NavigationBar from bottomBar]
-        TAB[Scaffold destination screens]
-        W[Entry widgets sorted by priority]
-    end
-
-    BB --> NAV
-    DEST --> SEC
-    SEC -->|entries refs| EPL
-    SEC -->|query categories| EPL
-    EPL --> RP
-    RP --> TAB
-    RP --> W
-    ST -.->|future: badges| NAV
-```
-
-**Section types:**
-
-| Type | Config | Runtime behavior |
-|------|--------|------------------|
-| `entries` | Explicit `{ feature, entry }` refs | Resolve that one widget |
-| `query` | `categories: ["alerts"]` | Collect all entry points matching category |
-
-**Alerts example:** feature publishes `EntryPoint(categories = setOf("alerts"))` → Alerts tab query section picks it up.
+`FeatureStatus` = feature-reported UI (`setupComplete`, `intro`) — **not** entitlement.
 
 ---
 
-## 6. Navigation (one NavHost)
-
-Scaffold routes and feature routes live in the **same** navigation graph.
-
-```mermaid
-flowchart TB
-    NH[NavHost]
-
-    subgraph ScaffoldRoutes["Scaffold routes"]
-        SH[scaffold/home]
-        SA[scaffold/alerts]
-        SP[scaffold/profile]
-    end
-
-    subgraph FeatureRoutes["Feature routes"]
-        AT[analytics/today]
-        AR[analytics/report/id]
-        LU[licensing/upgrade]
-    end
-
-    NH --> SH
-    NH --> SA
-    NH --> SP
-    NH --> AT
-    NH --> AR
-    NH --> LU
-
-    EP[EntryPoint action Navigate] -->|tap widget| NH
-    RT[SakRuntime.navigate] -->|notification / deep link| NH
-```
-
-Features register routes via `FeatureNavigationModule.navContributor` when the host builds `SakApp`.
-
----
-
-## 7. Feature APIs & cross-feature calls
-
-```mermaid
-flowchart LR
-    LF[LicensingFeature] -->|apis| LP[LicenseProvider]
-    LF --> AR[ApiRegistry]
-    AR --> AL[ApiLookup in FeatureContext]
-    AL --> AF[AnalyticsFeature]
-    AF -->|apis.find LicenseProvider| LP
-    SR[SakRuntime] -->|license updates| AC[ActiveConfig merge]
-```
-
-Licensing feature exposes `LicenseProvider` as a `FeatureApi`. Runtime subscribes to license updates and re-merges config.
-
----
-
-## 8. Android vs iOS hosting
-
-Runtime and `SakApp` are **identical**. Only the native shell and feature discovery differ.
-
-```mermaid
-flowchart TB
-    subgraph Android
-        MA[MainActivity]
-        SL_A[ServiceLoader<br/>META-INF/services]
-        MA --> HA[HarnessApp commonMain]
-        SL_A --> HA
-    end
-
-    subgraph iOS
-        SW[SwiftUI ContentView]
-        MVC[MainViewController.kt]
-        MAN[manualModules list]
-        FW[SakHarness.framework]
-        SW --> MVC
-        MVC --> HA
-        MAN --> HA
-        FW --> MVC
-    end
-
-    subgraph Shared["commonMain — same on all platforms"]
-        HA --> SL2[SakLauncher]
-        SL2 --> SR[SakRuntime]
-        SR --> SA[SakApp]
-    end
-```
+## 11. Platform discovery
 
 | | Android | iOS |
 |---|---------|-----|
-| Entry | `MainActivity` | `MainViewController()` in framework |
-| Feature discovery | `ServiceLoader` + optional manual list | **Manual** `FeatureModule` list only |
-| Build | Gradle → APK | Gradle → framework + Xcode links |
-| iOS targets | — | `iosSimulatorArm64`, `iosArm64` |
+| Auto-discovery | `META-INF/services/…FeatureModule` | None |
+| Manual list | Optional merge / override | **Required** |
+| UI | `SakApp` or custom | `SakIosHost` or custom |
 
 ---
 
-## 9. Data flows (StateFlows)
+## 12. Ownership matrix
 
-What Compose observes from the runtime:
-
-```mermaid
-flowchart LR
-    SR[SakRuntime]
-
-    SR --> RP[renderPlan]
-    SR --> AC[activeConfig]
-    SR --> NR[navigationRoute]
-    SR --> RT[routeTable]
-
-    RP --> SA[SakApp UI]
-    NR --> SA
-    AC -.->|debug / host| HOST[Host app]
-
-    F[Feature] --> ST[status]
-    F --> EP[entryPoints]
-    ST -.-> HOST
-    EP --> SCR[ScaffoldRenderer]
-    SCR --> RP
-```
+| Owns | Does not own |
+|------|----------------|
+| **Host:** shell, theme, `DefaultConfig`, providers, verifier (prod), which modules bundled | Feature business logic |
+| **Runtime:** merge, load/unload, `RenderPlan`, API registry, route guards | UI widgets |
+| **Feature:** routes, `entryPoints`, `FeatureStatus`, settings interpretation | Tab layout, entitlement source |
+| **AppConfig:** load policy + capabilities + opaque settings | Scaffold, entry placement |
 
 ---
 
-## 10. Quick reference — who owns what
+## 13. Source map
 
-```mermaid
-flowchart TD
-    subgraph HostOwns["Host owns"]
-        H1[DefaultConfig JSON]
-        H2[Which FeatureModules are bundled]
-        H3[LicenseVerifier production]
-        H4[Theme / branding slot]
-    end
-
-    subgraph RuntimeOwns["Runtime owns"]
-        R1[ActiveConfig merge]
-        R2[Feature activate/deactivate]
-        R3[Entry widget filtering]
-        R4[ApiRegistry]
-        R5[RenderPlan]
-    end
-
-    subgraph FeatureOwns["Feature owns"]
-        F1[Internal screens & routes]
-        F2[entryPoints + status flows]
-        F3[plan/grants business logic]
-        F4[setupComplete / attention]
-    end
-
-    subgraph ConfigOwns["DefaultConfig scaffold owns"]
-        C1[bottomBar tabs]
-        C2[destination layouts]
-        C3[which entries appear per tab]
-    end
-```
+| Concern | Location |
+|---------|----------|
+| Host facade | `sak-runtime/.../SakHost.kt`, `SakHostSetup.kt` |
+| Engine | `SakRuntime.kt`, `FeatureLifecycle.kt`, `EntryResolver.kt` |
+| Discovery | `bundle/FeatureModuleDiscovery*.kt` |
+| Contracts | `sak-sdk/...` |
+| Reference UI | `sak-compose-ui/.../SakApp.kt`, `shell/HostShellConfig.kt` |
+| Headless iOS | `sak-ios-bridge/.../SakIosHost.kt` |
 
 ---
 
-## Source code map
+## 14. Design principles (keep complexity down)
 
-| Concept | Primary files |
-|---------|----------------|
-| Contracts | `sak-sdk/.../Feature.kt`, `FeatureStatus.kt`, `EntryPoint.kt`, `AppConfig.kt` |
-| Engine | `sak-runtime/.../SakRuntime.kt`, `FeatureLifecycle.kt`, `ScaffoldRenderer.kt` |
-| Launch | `sak-runtime/.../SakLauncher.kt` |
-| UI shell | `sak-compose-ui/.../SakApp.kt` |
-| Harness | `sak-harness/.../HarnessApp.kt` |
-| iOS entry | `sak-harness/.../MainViewController.kt` |
-| iOS modules | `sak-harness/.../HarnessBundledFeatures.kt` |
+1. **Entitlement = load policy only** — no UI chrome in JSON.
+2. **Entry tags, not tab names in features** — host maps tags → shell regions.
+3. **Discover once, reconcile often** — providers push overlays; runtime diffs lifecycle.
+4. **Optional UI** — runtime is usable without `sak-compose-ui`.
+5. **Progressive depth** — start with `SakHost` + `FeatureModule`; add guards, APIs, signed license when needed.
+
+---
+
+## Compared to Norton AppSDK
+
+| AppSDK pain | SAK approach |
+|-------------|--------------|
+| Manual `createFeatures()` + manifest discovery | `FeatureModule` + ServiceLoader / manual list |
+| DISABLED but still loaded for upsell | `disabled` = not loaded; host shows locked chrome from `ActiveConfig` |
+| Scaffold in license config | Host shell only |
+| Fragment entry points | `EntryPoint` data + host renderer |
+| One fat toggle type | `FeatureConfig` + `FeatureContext` flows |

@@ -1,36 +1,33 @@
 package sak.sdk.feature
 
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.JsonElement
 import sak.sdk.api.ApiLookup
-import sak.sdk.config.FeatureToggle
 import sak.sdk.navigation.Route
 import sak.sdk.service.AppServiceLookup
 
 /**
- * What an active feature can do at runtime: read access, navigate, use APIs, register previews.
- * Provided by [sak.runtime.FeatureRuntimeContext] on [Feature.onActivated].
+ * Live runtime surface for a loaded [Feature] instance.
+ *
+ * Flows update when entitlement is refreshed without unload/reload.
+ * Compare [sak.sdk.license.FeatureEntitlement]: snapshot at [Feature.onCreate] only.
  */
 interface FeatureContext {
-    /** Current access snapshot (plan, grants, entries) from ActiveConfig. */
-    val access: FeatureToggle
+    /** Current capability strings for this feature. */
+    val capabilities: StateFlow<Set<String>>
 
-    /** Request navigation on the host NavHost (same graph as scaffold + features). */
+    /** [sak.sdk.license.LicenseInfo.type] — display label only, not for gating. */
+    val licenseType: StateFlow<String>
+
+    /** [FeatureConfig.settings] — opaque to runtime. */
+    val settings: StateFlow<Map<String, JsonElement>>
+
+    /** Request navigation in the host NavHost. */
     fun navigate(route: Route)
 
-    /** Look up APIs registered by other active features. */
+    /** Look up APIs registered by other loaded features. */
     val apis: ApiLookup
 
-    /** Host-provided services (analytics, auth, storage, …). */
+    /** Host-injected services (analytics, logging, etc.). */
     val services: AppServiceLookup
-
-    /** Register entry-point preview composables by [sak.sdk.entry.EntryPoint.previewKey]. */
-    val screens: ScreenRegistry
 }
-
-/** Maps preview keys to UI registrations (rendered by sak-compose-ui). */
-interface ScreenRegistry {
-    fun register(previewKey: String, registration: ScreenRegistration)
-    fun unregister(previewKey: String)
-}
-
-/** UI binding is implemented in sak-compose-ui; SDK holds the contract only. */
-interface ScreenRegistration

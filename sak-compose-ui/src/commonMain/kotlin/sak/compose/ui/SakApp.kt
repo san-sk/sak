@@ -25,22 +25,25 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import sak.compose.ui.shell.DefaultHostShell
+import sak.compose.ui.shell.HostShellDestination
 import sak.runtime.ResolvedEntry
 import sak.runtime.SakRuntime
 import sak.sdk.entry.EntryAction
 import sak.sdk.navigation.Route
 
 /**
- * Reference Compose shell: top bar, bottom bar, scaffold destinations, and feature NavHost routes.
+ * Reference Compose shell: bottom bar, scaffold destinations, and feature NavHost routes.
  *
- * Observe [sak.runtime.SakRuntime.renderPlan] and [sak.runtime.SakRuntime.navigationRoute].
- * Pass [featureNavContributors] from [navContributors] on bundled modules.
+ * Shell tabs are [HostShellDestination] ids — entry points with matching [tags][sak.sdk.entry.EntryPoint.tags]
+ * are shown on each tab via [sak.runtime.RenderPlan.entriesForTag].
  */
 @Composable
 fun SakApp(
     runtime: SakRuntime,
     theme: SakTheme = { content -> MaterialTheme { content() } },
     featureNavContributors: List<FeatureNavContributor> = emptyList(),
+    shellDestinations: List<HostShellDestination> = DefaultHostShell.destinations,
 ) {
     val navController = rememberNavController()
     val renderPlan by runtime.renderPlan.collectAsState()
@@ -60,14 +63,13 @@ fun SakApp(
     theme {
         Scaffold(
             bottomBar = {
-                val items = renderPlan.scaffold.bottomBar.items
-                if (items.isNotEmpty()) {
+                if (shellDestinations.isNotEmpty()) {
                     NavigationBar {
-                        items.forEach { item ->
+                        shellDestinations.forEach { dest ->
                             NavigationBarItem(
-                                selected = currentRoute == scaffoldRoute(item.destination),
+                                selected = currentRoute == scaffoldRoute(dest.id),
                                 onClick = {
-                                    navController.navigate(scaffoldRoute(item.destination)) {
+                                    navController.navigate(scaffoldRoute(dest.id)) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
                                         }
@@ -76,13 +78,13 @@ fun SakApp(
                                     }
                                 },
                                 icon = {
-                                    if (sakBarIconSupported(item.icon)) {
-                                        SakBarIcon(name = item.icon)
+                                    if (sakBarIconSupported(dest.icon)) {
+                                        SakBarIcon(name = dest.icon)
                                     } else {
-                                        Text(item.label.take(1))
+                                        Text(dest.label.take(1))
                                     }
                                 },
-                                label = { Text(item.label) },
+                                label = { Text(dest.label) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -98,14 +100,14 @@ fun SakApp(
         ) { padding ->
             NavHost(
                 navController = navController,
-                startDestination = scaffoldRoute("home"),
+                startDestination = scaffoldRoute(shellDestinations.firstOrNull()?.id ?: "home"),
                 modifier = Modifier.padding(padding),
             ) {
-                renderPlan.scaffold.destinations.keys.forEach { destinationId ->
-                    composable(scaffoldRoute(destinationId)) {
+                shellDestinations.forEach { dest ->
+                    composable(scaffoldRoute(dest.id)) {
                         ScaffoldDestination(
-                            destinationId = destinationId,
-                            entries = renderPlan.destinations[destinationId] ?: emptyList(),
+                            destinationId = dest.id,
+                            entries = renderPlan.entriesForTag(dest.id),
                             onNavigate = { route -> navController.navigate(route.value) },
                         )
                     }
@@ -138,7 +140,7 @@ private fun ScaffoldDestination(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Entry points hosted by active features",
+            text = "Entry points tagged for this destination",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -150,7 +152,7 @@ private fun ScaffoldDestination(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "No entry points for this destination",
+                    text = "No entry points for tag \"$destinationId\"",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -164,6 +166,7 @@ private fun ScaffoldDestination(
                         when (val action = resolved.entry.action) {
                             is EntryAction.Navigate -> onNavigate(Route(action.route))
                             is EntryAction.DeepLink -> onNavigate(Route(action.uri))
+                            is EntryAction.Command -> Unit
                             EntryAction.None -> Unit
                         }
                     },

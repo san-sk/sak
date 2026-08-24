@@ -1,24 +1,25 @@
 package sak.sdk.entry
 
 /**
- * A small widget on a scaffold destination (card, row, banner) that can open a feature screen.
+ * Feature-published UI descriptor — data only, not a Composable or View.
  *
- * Publish via [sak.sdk.feature.Feature.entryPoints]. Placement is driven by config scaffold sections
- * (explicit refs or category query on destinations like Home / Alerts).
+ * The feature declares what exists; the host decides placement and rendering from [kind] and [payload].
  */
-/** Stable id for an entry widget (e.g. `summary-card`, `unlock-card`). */
 data class EntryPointId(val value: String)
 
-/** Runtime entry widget published by a feature and placed by scaffold config. */
+/**
+ * @property id Stable id within the feature (e.g. `summary-card`).
+ * @property kind Widget shape hint for the host renderer.
+ * @property payload Arbitrary JSON-compatible map — titles, icons, metrics, etc.
+ * @property tags Semantic filters (`setup`, `alert`, …) — not tab or route names.
+ * @property priority Higher values sort earlier when the host groups entries.
+ * @property action What happens when the user activates this entry.
+ */
 data class EntryPoint(
     val id: EntryPointId,
-    val style: EntryStyle,
-    /** Key for [sak.sdk.feature.ScreenRegistry] preview composable. */
-    val previewKey: String,
-    val action: EntryAction,
-    /** Higher priority sorts first within a destination section. */
+    val kind: EntryKind,
+    val payload: EntryPayload = emptyMap(),
+    val tags: Set<String> = emptySet(),
     val priority: Int = 0,
-    /** Used by scaffold query sections (e.g. `alerts`, `home`). */
-    val categories: Set<String> = emptySet(),
-    val visibility: EntryVisibility = EntryVisibility.WhenEnabled,
+    val action: EntryAction = EntryAction.None,
 )

@@ -1,7 +1,5 @@
 package sak.compose.ui
 
-import sak.sdk.bundle.SakDependencies
-
 /**
  * Optional navigation wiring for a [sak.sdk.bundle.FeatureModule].
  *
@@ -9,6 +7,6 @@ import sak.sdk.bundle.SakDependencies
  */
 interface FeatureNavigationModule {
     val featureId: sak.sdk.feature.FeatureId
-    /** NavGraphBuilder extension for this feature's screens. */
-    fun navContributor(deps: SakDependencies): FeatureNavContributor
+
+    fun navContributor(): FeatureNavContributor
 }

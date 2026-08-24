@@ -28,14 +28,13 @@ import sak.harness.demo.HarnessDemoRuntimeRef
 import sak.harness.demo.HarnessLogService
 import sak.harness.demo.InMemoryHarnessLogService
 import sak.runtime.AppServiceRegistry
-import sak.runtime.SakLauncher
+import sak.runtime.SakHost
+import sak.runtime.SakHostSetup
 import sak.runtime.SakRuntime
-import sak.runtime.bundle.discoverFeatureModules
 import sak.sample.licensing.SampleLicenseProvider
-import sak.sdk.bundle.SakDependencies
 import sak.sdk.config.AppConfig
 
-/** Demo harness root: discovers modules, launches runtime, renders [SakApp]. */
+/** Demo harness: [SakHost] + [SakApp]. */
 @Composable
 fun HarnessApp(
     defaultConfig: AppConfig,
@@ -43,24 +42,22 @@ fun HarnessApp(
     appScope: CoroutineScope = rememberCoroutineScope(),
 ) {
     var runtime by remember { mutableStateOf<SakRuntime?>(null) }
-    val featureModules = remember {
-        discoverFeatureModules(manualModules = harnessBundledFeatureModules)
-    }
     val logService = remember { InMemoryHarnessLogService() }
-    val appServices = remember(logService) {
-        AppServiceRegistry(mapOf(HarnessLogService::class to logService))
-    }
-    val deps = SakDependencies(licenseProvider = licenseProvider)
-
-    LaunchedEffect(defaultConfig, licenseProvider) {
-        if (runtime == null) {
-            val launcher = SakLauncher(appScope)
-            val sakRuntime = launcher.launch(
+    val host = remember(licenseProvider, logService, defaultConfig) {
+        SakHost(
+            scope = appScope,
+            setup = SakHostSetup(
                 defaultConfig = defaultConfig,
-                featureModules = featureModules,
-                deps = deps,
-                appServices = appServices,
-            )
+                bundledModules = harnessBundledFeatureModules(licenseProvider),
+                licenseProvider = licenseProvider,
+                appServices = AppServiceRegistry(mapOf(HarnessLogService::class to logService)),
+            ),
+        )
+    }
+
+    LaunchedEffect(host) {
+        if (runtime == null) {
+            val sakRuntime = host.start()
             HarnessDemoRuntimeRef.runtime = sakRuntime
             runtime = sakRuntime
         }
@@ -72,31 +69,20 @@ fun HarnessApp(
     } else {
         SakApp(
             runtime = sakRuntime,
-            featureNavContributors = featureModules.navContributors(deps),
+            featureNavContributors = host.modules().navContributors(),
         )
     }
 }
 
-/** Branded splash shown while the runtime boots (config merge + feature activation). */
 @Composable
 private fun LoadingScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            SakLogo(modifier = Modifier.size(96.dp))
-            Spacer(Modifier.height(24.dp))
-            CircularProgressIndicator()
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            SakLogo(modifier = Modifier.size(72.dp))
             Spacer(Modifier.height(16.dp))
-            Text(
-                text = "Starting SAK harness",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            CircularProgressIndicator()
+            Spacer(Modifier.height(8.dp))
+            Text("Starting SAK…", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

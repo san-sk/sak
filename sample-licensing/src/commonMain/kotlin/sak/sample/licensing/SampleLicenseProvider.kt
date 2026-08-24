@@ -3,40 +3,29 @@ package sak.sample.licensing
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import sak.sdk.api.featureApi
 import sak.sdk.config.AppConfig
-import sak.sdk.config.EntryAccess
-import sak.sdk.config.FeatureToggle
+import sak.sdk.feature.FeatureConfig
+import sak.sdk.feature.FeatureState
+import sak.sdk.license.LicenseInfo
 import sak.sdk.license.LicenseProvider
 import sak.sdk.license.SignedLicensePayload
 
 /**
  * In-memory demo [LicenseProvider] for the harness.
- * [unlockPro] emits a signed overlay that upgrades both analytics and licensing to pro;
- * [resetToTrial] reverts both to the trial plan.
+ * [unlockPro] / [resetToTrial] emit signed overlays that change license type and capabilities.
  */
 class SampleLicenseProvider : LicenseProvider {
     private val proOverlay = SignedLicensePayload(
         config = AppConfig(
-            version = 1,
+            license = LicenseInfo(type = "pro"),
             features = mapOf(
-                "analytics" to FeatureToggle(
-                    enabled = true,
-                    visible = true,
-                    plan = "pro",
-                    grants = setOf("analytics.summary", "analytics.reports"),
-                    entries = EntryAccess(
-                        allowed = setOf("summary-card", "report-row"),
-                    ),
+                "analytics" to FeatureConfig(
+                    state = FeatureState.Enabled,
+                    capabilities = setOf("analytics.summary", "analytics.reports"),
                 ),
-                "licensing" to FeatureToggle(
-                    enabled = true,
-                    visible = true,
-                    plan = "pro",
-                    grants = setOf("licensing.pro"),
-                    entries = EntryAccess(
-                        allowed = setOf("plan-row", "pro-widget"),
-                    ),
+                "licensing" to FeatureConfig(
+                    state = FeatureState.Enabled,
+                    capabilities = setOf("licensing.pro"),
                 ),
             ),
         ),
@@ -45,25 +34,15 @@ class SampleLicenseProvider : LicenseProvider {
 
     private val trialOverlay = SignedLicensePayload(
         config = AppConfig(
-            version = 1,
+            license = LicenseInfo(type = "trial"),
             features = mapOf(
-                "analytics" to FeatureToggle(
-                    enabled = true,
-                    visible = true,
-                    plan = "trial",
-                    grants = setOf("analytics.summary"),
-                    entries = EntryAccess(
-                        allowed = setOf("summary-card", "trial-tile"),
-                    ),
+                "analytics" to FeatureConfig(
+                    state = FeatureState.Enabled,
+                    capabilities = setOf("analytics.summary"),
                 ),
-                "licensing" to FeatureToggle(
-                    enabled = true,
-                    visible = true,
-                    plan = "trial",
-                    grants = emptySet(),
-                    entries = EntryAccess(
-                        allowed = setOf("plan-row", "unlock-banner"),
-                    ),
+                "licensing" to FeatureConfig(
+                    state = FeatureState.Enabled,
+                    capabilities = emptySet(),
                 ),
             ),
         ),
@@ -76,12 +55,10 @@ class SampleLicenseProvider : LicenseProvider {
 
     override suspend fun resolveLicense(): SignedLicensePayload? = null
 
-    /** Harness/demo: emit pro license overlay (upgrades analytics + licensing). */
     fun unlockPro() {
         updatesFlow.tryEmit(proOverlay)
     }
 
-    /** Harness/demo: emit trial overlay (reverts analytics + licensing to trial). */
     fun resetToTrial() {
         updatesFlow.tryEmit(trialOverlay)
     }

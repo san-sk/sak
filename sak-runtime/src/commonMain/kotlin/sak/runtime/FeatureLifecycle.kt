@@ -2,135 +2,135 @@ package sak.runtime
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import sak.sdk.api.ApiLookup
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.JsonElement
 import sak.sdk.config.AppConfig
-import sak.sdk.config.FeatureToggle
-import sak.sdk.config.mergeLicenseOverlay
-import sak.sdk.entry.EntryPoint
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureContext
 import sak.sdk.feature.FeatureId
-import sak.sdk.license.LicenseProvider
-import sak.sdk.license.LicenseVerifier
-import sak.sdk.license.SignedLicensePayload
+import sak.sdk.feature.FeatureState
+import sak.sdk.license.toEntitlement
 import sak.sdk.navigation.Route
+import sak.sdk.navigation.RouteGuard
 import sak.sdk.service.AppServiceLookup
 
-/** Runtime implementation of [FeatureContext] passed to features on activate. */
-class FeatureRuntimeContext(
-    private val featureId: FeatureId,
-    private val accessFlow: StateFlow<sak.sdk.config.FeatureToggle>,
-    private val apiLookup: ApiLookup,
-    private val serviceLookup: AppServiceLookup,
-    private val navigator: (Route) -> Unit,
-    private val screenRegistry: sak.sdk.feature.ScreenRegistry,
-) : FeatureContext {
-    override val access: sak.sdk.config.FeatureToggle
-        get() = accessFlow.value
-
-    override fun navigate(route: Route) = navigator(route)
-
-    override val apis: ApiLookup = apiLookup
-
-    override val services: AppServiceLookup = serviceLookup
-
-    override val screens: sak.sdk.feature.ScreenRegistry = screenRegistry
-}
-
 /**
- * Activates/deactivates features when ActiveConfig changes.
- * One feature instance per id for the app process lifetime (not per Activity rotation).
+ * Loads and unloads [Feature] instances when [AppConfig] load policy changes.
+ *
+ * One instance per feature id for the app process (survives Activity rotation).
  */
 class FeatureLifecycle(
     private val apiRegistry: ApiRegistry,
     private val onNavigate: (Route) -> Unit,
 ) {
     private val active = mutableMapOf<FeatureId, Feature>()
-    private val accessFlows = mutableMapOf<FeatureId, MutableStateFlow<sak.sdk.config.FeatureToggle>>()
-    private val screenRegistries = mutableMapOf<FeatureId, ScreenRegistryImpl>()
+    private val capabilityFlows = mutableMapOf<FeatureId, MutableStateFlow<Set<String>>>()
+    private val licenseTypeFlows = mutableMapOf<FeatureId, MutableStateFlow<String>>()
+    private val settingsFlows = mutableMapOf<FeatureId, MutableStateFlow<Map<String, JsonElement>>>()
 
-    /** Snapshot of currently activated features. */
     fun activeFeatures(): Map<FeatureId, Feature> = active.toMap()
 
+    fun activeFeatureIds(): Set<FeatureId> = active.keys.toSet()
+
+    fun capabilities(featureId: FeatureId): Set<String> =
+        capabilityFlows[featureId]?.value ?: emptySet()
+
+    fun routeGuards(featureId: FeatureId): List<RouteGuard> =
+        active[featureId]?.routeGuards() ?: emptyList()
+
     /**
-     * Reconcile active features with [activeConfig]: activate new, update access, deactivate removed.
+     * Reconcile loaded features with [activeConfig]:
+     * [FeatureState.Enabled] → [Feature.onCreate] or [Feature.onCapabilitiesChanged];
+     * [FeatureState.Disabled] / [FeatureState.Hidden] → [Feature.onDestroy].
      */
     suspend fun apply(
         activeConfig: AppConfig,
         factories: Map<FeatureId, () -> Feature>,
         serviceLookup: AppServiceLookup,
     ) {
-        val desired = activeConfig.features.filter { (_, toggle) -> toggle.enabled }.keys
-        val desiredIds = desired.map { FeatureId(it) }
+        val licenseType = activeConfig.license.type
+        val desiredIds = activeConfig.features
+            .filter { (_, row) -> row.state.shouldLoad() }
+            .keys
+            .map { FeatureId(it) }
 
-        val toDeactivate = active.keys.filter { it !in desiredIds }
-        toDeactivate.forEach { id -> deactivate(id) }
+        val toUnload = active.keys.filter { it !in desiredIds }
+        toUnload.forEach { unload(it) }
 
         desiredIds.forEach { id ->
-            val toggle = activeConfig.features[id.value] ?: return@forEach
+            val row = activeConfig.features[id.value] ?: return@forEach
             if (id in active) {
-                accessFlows[id]?.value = toggle
-                active[id]?.onAccessChanged(contextFor(id, serviceLookup))
+                updateEntitlement(id, row, licenseType, serviceLookup)
             } else {
                 val factory = factories[id] ?: return@forEach
-                activate(id, factory(), toggle, serviceLookup)
+                load(id, factory(), row, licenseType, serviceLookup)
             }
         }
     }
 
-    private suspend fun activate(
+    private suspend fun load(
         id: FeatureId,
         feature: Feature,
-        toggle: sak.sdk.config.FeatureToggle,
+        row: sak.sdk.feature.FeatureConfig,
+        licenseType: String,
         serviceLookup: AppServiceLookup,
     ) {
-        val accessFlow = MutableStateFlow(toggle)
-        accessFlows[id] = accessFlow
-        val registry = ScreenRegistryImpl()
-        screenRegistries[id] = registry
+        val entitlement = row.toEntitlement(licenseType)
+        val capsFlow = MutableStateFlow(entitlement.capabilities)
+        val licenseFlow = MutableStateFlow(entitlement.licenseType)
+        val settingsFlow = MutableStateFlow(entitlement.settings)
+        capabilityFlows[id] = capsFlow
+        licenseTypeFlows[id] = licenseFlow
+        settingsFlows[id] = settingsFlow
         active[id] = feature
-        feature.onActivated(contextFor(id, serviceLookup, accessFlow, registry))
+        feature.onCreate(contextFor(id, capsFlow, licenseFlow, settingsFlow, serviceLookup))
         apiRegistry.register(id, feature.apis())
     }
 
-    private suspend fun deactivate(id: FeatureId) {
-        active[id]?.onDeactivated()
+    private suspend fun updateEntitlement(
+        id: FeatureId,
+        row: sak.sdk.feature.FeatureConfig,
+        licenseType: String,
+        serviceLookup: AppServiceLookup,
+    ) {
+        val entitlement = row.toEntitlement(licenseType)
+        val capsFlow = capabilityFlows[id]!!
+        val licenseFlow = licenseTypeFlows[id]!!
+        val settingsFlow = settingsFlows[id]!!
+        val capsChanged = capsFlow.value != entitlement.capabilities
+        val settingsChanged = settingsFlow.value != entitlement.settings
+        capsFlow.value = entitlement.capabilities
+        licenseFlow.value = entitlement.licenseType
+        settingsFlow.value = entitlement.settings
+        if (capsChanged || settingsChanged) {
+            active[id]?.onCapabilitiesChanged(
+                contextFor(id, capsFlow, licenseFlow, settingsFlow, serviceLookup),
+            )
+        }
+    }
+
+    private suspend fun unload(id: FeatureId) {
+        active[id]?.onDestroy()
         active.remove(id)
-        accessFlows.remove(id)
-        screenRegistries.remove(id)
+        capabilityFlows.remove(id)
+        licenseTypeFlows.remove(id)
+        settingsFlows.remove(id)
         apiRegistry.unregister(id)
     }
 
-    /** Screen registry for entry preview composables (Compose hosts). */
-    fun screenRegistry(featureId: FeatureId): ScreenRegistryImpl? = screenRegistries[featureId]
-
     private fun contextFor(
         id: FeatureId,
+        capabilities: StateFlow<Set<String>>,
+        licenseType: StateFlow<String>,
+        settings: StateFlow<Map<String, JsonElement>>,
         serviceLookup: AppServiceLookup,
-        accessFlow: MutableStateFlow<sak.sdk.config.FeatureToggle> = accessFlows[id]!!,
-        registry: ScreenRegistryImpl = screenRegistries[id]!!,
     ): FeatureContext = FeatureRuntimeContext(
         featureId = id,
-        accessFlow = accessFlow,
+        capabilities = capabilities,
+        licenseType = licenseType,
+        settings = settings,
         apiLookup = apiRegistry.lookup(),
         serviceLookup = serviceLookup,
         navigator = onNavigate,
-        screenRegistry = registry,
     )
-}
-
-/** Per-feature screen preview registry (entry point composables). */
-class ScreenRegistryImpl : sak.sdk.feature.ScreenRegistry {
-    private val registrations = mutableMapOf<String, sak.sdk.feature.ScreenRegistration>()
-
-    override fun register(previewKey: String, registration: sak.sdk.feature.ScreenRegistration) {
-        registrations[previewKey] = registration
-    }
-
-    override fun unregister(previewKey: String) {
-        registrations.remove(previewKey)
-    }
-
-    /** Resolve a preview registration for [sak.compose.ui.SakApp] entry cards. */
-    fun get(previewKey: String): sak.sdk.feature.ScreenRegistration? = registrations[previewKey]
 }

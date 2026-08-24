@@ -81,7 +81,13 @@ Then in your host:
 
 ```kotlin
 val featureModules = discoverFeatureModules()
-val deps = SakDependencies(licenseProvider = yourLicenseProvider)
+val setup = SakHostSetup(
+    defaultConfig = bundledConfig,
+    licenseProvider = yourLicenseProvider,
+    bundledModules = listOf(…),
+)
+val host = SakHost(appScope, setup)
+val runtime = host.start()
 ```
 
 ### Step 4 — Launch runtime and show UI
@@ -106,22 +112,23 @@ fun SakHost(defaultConfig: AppConfig) {
     var runtime by remember { mutableStateOf<SakRuntime?>(null) }
     val scope = rememberCoroutineScope()
     val modules = remember { discoverFeatureModules() }
-    val deps = SakDependencies(licenseProvider = ...)
+    val setup = SakHostSetup(
+        defaultConfig = defaultConfig,
+        bundledModules = modules,
+        licenseProvider = yourLicenseProvider,
+    )
+    val host = SakHost(scope, setup)
 
-    LaunchedEffect(defaultConfig) {
+    LaunchedEffect(setup) {
         if (runtime == null) {
-            runtime = SakLauncher(scope).launch(
-                defaultConfig = defaultConfig,
-                featureModules = modules,
-                deps = deps,
-            )
+            runtime = host.start()
         }
     }
 
     runtime?.let { rt ->
         SakApp(
             runtime = rt,
-            featureNavContributors = modules.navContributors(deps),
+            featureNavContributors = host.modules().navContributors(),
         )
     }
 }

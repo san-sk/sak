@@ -1,23 +1,27 @@
 package sak.sdk.config
 
 import kotlinx.serialization.Serializable
-import sak.sdk.layout.ScaffoldConfig
+import sak.sdk.feature.FeatureConfig
+import sak.sdk.license.LicenseInfo
 
 /**
- * Root JSON config document.
+ * Root entitlement JSON document.
  *
- * - **DefaultConfig**: scaffold + features (shipped with the app).
- * - **License overlay**: features only (signed); merged into ActiveConfig.
- * - Scaffold is never changed by the license overlay.
+ * Same shape for bundled default, login response, IAP result, and backend refresh.
+ * Runtime merges overlays into the bundled default to produce [ActiveConfig].
  */
 @Serializable
 data class AppConfig(
-    val version: Int = 1,
-    val scaffold: ScaffoldConfig? = null,
-    val features: Map<String, FeatureToggle> = emptyMap(),
+    /** Schema version for forward-compatible parsing. */
+    val schema: Int = 1,
+    /** Account-level metadata — [LicenseInfo.type] is display-only, not used for gating. */
+    val license: LicenseInfo = LicenseInfo(),
+    /** Per-feature entitlement rows keyed by feature id. */
+    val features: Map<String, FeatureConfig> = emptyMap(),
 )
 
+/** Bundled default entitlement shipped with the app. */
 typealias DefaultConfig = AppConfig
 
-/** DefaultConfig after license overlay merge ([sak.sdk.config.mergeLicenseOverlay]). */
+/** Effective entitlement after merge (default + overlay). */
 typealias ActiveConfig = AppConfig

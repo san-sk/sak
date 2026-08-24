@@ -17,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
@@ -27,12 +26,13 @@ import sak.compose.ui.InfoCard
 import sak.compose.ui.SakEntryWidget
 import sak.compose.ui.SakFeatureScreen
 import sak.compose.ui.SectionCard
+import sak.compose.ui.shell.DefaultHostShell
 import sak.sdk.entry.EntryAction
+import sak.sdk.entry.EntryKind
 import sak.sdk.entry.EntryPoint
 import sak.sdk.entry.EntryPointId
-import sak.sdk.entry.EntryStyle
-import sak.sdk.feature.Attention
 import sak.sdk.feature.FeatureId
+import sak.sdk.feature.IntroState
 import sak.sdk.navigation.Route
 import sak.sample.licensing.SampleLicenseProvider
 
@@ -40,7 +40,7 @@ import sak.sample.licensing.SampleLicenseProvider
 fun NavGraphBuilder.harnessDemoNavigation(onBack: () -> Unit) {
     composable("demos/config") { ConfigDemoScreen(onBack) }
     composable("demos/lifecycle") { LifecycleDemoScreen(onBack) }
-    composable("demos/entrystyles") { EntryStylesDemoScreen(onBack) }
+    composable("demos/entrystyles") { EntryKindsDemoScreen(onBack) }
     composable("demos/access") { AccessDemoScreen(onBack) }
     composable("demos/api") { ApiDemoScreen(onBack) }
     composable("demos/service") { ServiceDemoScreen(onBack) }
@@ -52,24 +52,30 @@ fun NavGraphBuilder.harnessDemoNavigation(onBack: () -> Unit) {
 fun ConfigDemoScreen(onBack: () -> Unit) {
     val runtime = HarnessDemoRuntimeRef.runtime ?: return
     val activeConfig by runtime.activeConfig.collectAsState()
+    val renderPlan by runtime.renderPlan.collectAsState()
 
     SakFeatureScreen(
-        title = "Config-driven scaffold",
-        subtitle = "DefaultConfig JSON drives chrome & widgets",
+        title = "Entitlement config",
+        subtitle = "AppConfig JSON drives load policy & capabilities",
     ) {
-        SectionCard("Bottom bar (scaffold.bottomBar)") {
-            activeConfig.scaffold?.bottomBar?.items?.forEach { item ->
-                FieldRow(item.label, "\u2192 scaffold/${item.destination}")
+        SectionCard("License (display only)") {
+            FieldRow("type", activeConfig.license.type)
+            FieldRow("rev", activeConfig.license.rev ?: "—")
+        }
+        SectionCard("Host shell (not in JSON)") {
+            DefaultHostShell.destinations.forEach { dest ->
+                FieldRow(dest.id, dest.label)
             }
         }
-        SectionCard("Destinations (scaffold.destinations)") {
-            activeConfig.scaffold?.destinations?.forEach { (id, layout) ->
-                FieldRow(id, "${layout.sections.size} section(s)")
+        SectionCard("Entry catalog") {
+            FieldRow("total entries", renderPlan.entries.size.toString())
+            renderPlan.byTag.forEach { (tag, entries) ->
+                FieldRow(tag.ifEmpty { "(untagged)" }, entries.size.toString())
             }
         }
-        SectionCard("Active features (features)") {
-            activeConfig.features.forEach { (id, toggle) ->
-                FieldRow(id, "enabled=${toggle.enabled} \u00B7 visible=${toggle.visible} \u00B7 plan=${toggle.plan}")
+        SectionCard("Feature rows") {
+            activeConfig.features.forEach { (id, row) ->
+                FieldRow(id, "state=${row.state.name} · caps=${row.capabilities.size}")
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -86,14 +92,11 @@ fun LifecycleDemoScreen(onBack: () -> Unit) {
 
     SakFeatureScreen(
         title = "Feature lifecycle",
-        subtitle = "onActivated / onAccessChanged / onReset + FeatureStatus",
+        subtitle = "onCreate / onCapabilitiesChanged / onDestroy / onReset",
     ) {
         SectionCard("FeatureStatus") {
-            FieldRow("enabled", status.enabled.toString())
-            FieldRow("visible", status.visible.toString())
             FieldRow("setupComplete", status.setupComplete.toString())
-            FieldRow("attention", status.attention.toString())
-            FieldRow("introSeen", status.introSeen.toString())
+            FieldRow("intro", status.intro.toString())
         }
         SectionCard("Controls") {
             Button(
@@ -104,12 +107,12 @@ fun LifecycleDemoScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Attention.entries.forEach { attention ->
+                IntroState.entries.forEach { intro ->
                     OutlinedButton(
-                        onClick = { feature.setAttention(attention) },
+                        onClick = { feature.setIntroState(intro) },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(attention.name)
+                        Text(intro.name)
                     }
                 }
             }
@@ -118,7 +121,7 @@ fun LifecycleDemoScreen(onBack: () -> Unit) {
             if (log.isEmpty()) {
                 Text("No callbacks yet", style = MaterialTheme.typography.bodySmall)
             } else {
-                log.forEach { line -> Text("\u00B7 $line", style = MaterialTheme.typography.bodySmall) }
+                log.forEach { line -> Text("· $line", style = MaterialTheme.typography.bodySmall) }
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -128,21 +131,18 @@ fun LifecycleDemoScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun EntryStylesDemoScreen(onBack: () -> Unit) {
+fun EntryKindsDemoScreen(onBack: () -> Unit) {
     val featureId = HarnessDemoFeatureModule.feature?.id ?: FeatureId("demos")
 
     SakFeatureScreen(
-        title = "Entry-point styles",
-        subtitle = "EntryStyle drives widget rendering on destinations",
+        title = "Entry kinds",
+        subtitle = "EntryKind drives SakEntryWidget rendering",
     ) {
-        InfoCard(
-            "SakEntryWidget renders each EntryStyle differently: Card, Row, Banner, " +
-                "Tile, Widget, Custom (falls back to Card).",
-        )
-        EntryStyle.entries.forEach { style ->
+        InfoCard("SakEntryWidget maps each EntryKind to a reference widget shape.")
+        EntryKind.entries.forEach { kind ->
             SakEntryWidget(
                 featureId = featureId,
-                entry = sampleEntry("sample-${style.name.lowercase()}", style),
+                entry = sampleEntry("sample-${kind.name.lowercase()}", kind),
                 onClick = {},
             )
         }
@@ -154,33 +154,26 @@ fun EntryStylesDemoScreen(onBack: () -> Unit) {
 
 @Composable
 fun AccessDemoScreen(onBack: () -> Unit) {
-    val feature = HarnessDemoFeatureModule.feature ?: return
-    val access by feature.access.collectAsState()
+    val runtime = HarnessDemoRuntimeRef.runtime ?: return
+    val activeConfig by runtime.activeConfig.collectAsState()
+    val demosRow = activeConfig.features["demos"]
 
     SakFeatureScreen(
-        title = "Feature access",
-        subtitle = "FeatureToggle from ActiveConfig",
+        title = "FeatureConfig row",
+        subtitle = "Per-feature entitlement from ActiveConfig",
     ) {
-        val toggle = access ?: return@SakFeatureScreen
-        SectionCard("Plan & visibility") {
-            FieldRow("enabled", toggle.enabled.toString())
-            FieldRow("visible", toggle.visible.toString())
-            FieldRow("plan", toggle.plan)
+        if (demosRow == null) return@SakFeatureScreen
+        SectionCard("demos feature row") {
+            FieldRow("state", demosRow.state.name)
+            FieldRow("capabilities", demosRow.capabilities.joinToString(", ").ifEmpty { "—" })
         }
-        SectionCard("grants") {
-            if (toggle.grants.isEmpty()) {
+        SectionCard("settings (opaque)") {
+            if (demosRow.settings.isEmpty()) {
                 Text("none", style = MaterialTheme.typography.bodySmall)
             } else {
-                toggle.grants.forEach { grant -> Text("\u00B7 $grant", style = MaterialTheme.typography.bodySmall) }
-            }
-        }
-        SectionCard("entries") {
-            FieldRow("allowed", toggle.entries?.allowed?.joinToString(", ") ?: "all")
-            FieldRow("blocked", toggle.entries?.blocked?.joinToString(", ") ?: "none")
-        }
-        SectionCard("attrs (opaque JSON)") {
-            toggle.attrs.forEach { (key, value) ->
-                FieldRow(key, value.toString())
+                demosRow.settings.forEach { (key, value) ->
+                    FieldRow(key, value.toString())
+                }
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -199,16 +192,15 @@ fun ApiDemoScreen(onBack: () -> Unit) {
         subtitle = "cross-feature ApiLookup",
     ) {
         InfoCard(
-            "Licensing exposes LicenseProvider as a FeatureApi. The demos feature looks " +
-                "it up at runtime via context.apis.find(...).",
+            "Licensing exposes LicenseProvider as a FeatureApi. Demos looks it up via context.apis.",
         )
         Button(
             onClick = {
                 val provider = feature.findLicenseProvider()
                 result = if (provider != null) {
-                    "Found LicenseProvider \u2192 ${provider::class.simpleName}"
+                    "Found LicenseProvider → ${provider::class.simpleName}"
                 } else {
-                    "Not found — licensing feature not active"
+                    "Not found — licensing feature not loaded"
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -248,10 +240,7 @@ fun ServiceDemoScreen(onBack: () -> Unit) {
         title = "App services",
         subtitle = "host-injected AppService",
     ) {
-        InfoCard(
-            "The host registered InMemoryHarnessLogService via AppServiceRegistry. " +
-                "Features consume it through context.services.",
-        )
+        InfoCard("Host registered InMemoryHarnessLogService via AppServiceRegistry.")
         Button(
             onClick = { service.log("log entry @ ${System.nanoTime().toString().takeLast(6)}") },
             modifier = Modifier.fillMaxWidth(),
@@ -267,7 +256,7 @@ fun ServiceDemoScreen(onBack: () -> Unit) {
             if (messages.isEmpty()) {
                 Text("empty", style = MaterialTheme.typography.bodySmall)
             } else {
-                messages.forEach { message -> Text("\u00B7 $message", style = MaterialTheme.typography.bodySmall) }
+                messages.forEach { message -> Text("· $message", style = MaterialTheme.typography.bodySmall) }
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -285,32 +274,28 @@ fun LicenseDemoScreen(onBack: () -> Unit) {
 
     SakFeatureScreen(
         title = "License overlay",
-        subtitle = "signed config merge into ActiveConfig",
+        subtitle = "merge entitlement into ActiveConfig",
     ) {
-        InfoCard(
-            "DefaultConfig is merged with the license overlay. Only features change; " +
-                "the scaffold is preserved. Verifier = AcceptAllLicenseVerifier (dev).",
-        )
-        SectionCard("Current analytics access") {
-            FieldRow("plan", activeConfig.features["analytics"]?.plan ?: "\u2014")
-            FieldRow(
-                "grants",
-                (activeConfig.features["analytics"]?.grants ?: emptySet()).joinToString(", ").ifEmpty { "\u2014" },
-            )
+        InfoCard("DefaultConfig merges with signed or dev overlays. Shell tabs are host-owned.")
+        SectionCard("Account license type") {
+            FieldRow("type", activeConfig.license.type)
         }
-        SectionCard("Current licensing access") {
-            FieldRow("plan", activeConfig.features["licensing"]?.plan ?: "\u2014")
-            FieldRow(
-                "grants",
-                (activeConfig.features["licensing"]?.grants ?: emptySet()).joinToString(", ").ifEmpty { "\u2014" },
-            )
+        SectionCard("analytics row") {
+            val row = activeConfig.features["analytics"]
+            FieldRow("state", row?.state?.name ?: "—")
+            FieldRow("capabilities", row?.capabilities?.joinToString(", ") ?: "—")
+        }
+        SectionCard("licensing row") {
+            val row = activeConfig.features["licensing"]
+            FieldRow("state", row?.state?.name ?: "—")
+            FieldRow("capabilities", row?.capabilities?.joinToString(", ") ?: "—")
         }
         Spacer(Modifier.height(8.dp))
         Button(
-            onClick = { scope.launch { runtime.applyDevLicenseOverlay(proAnalyticsOverlay) } },
+            onClick = { scope.launch { runtime.applyDevEntitlementOverlay(proAnalyticsOverlay) } },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Apply dev overlay (analytics \u2192 pro)")
+            Text("Apply dev overlay (analytics → pro reports)")
         }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(
@@ -321,11 +306,6 @@ fun LicenseDemoScreen(onBack: () -> Unit) {
         ) {
             Text("Unlock Pro via licensing feature API")
         }
-        InfoCard(
-            "The licensing feature's Unlock Pro (licensing/upgrade) emits the same overlay. " +
-                "After a pro overlay analytics gains analytics.reports (report-row on Alerts, " +
-                "trial-tile disappears from Home) and licensing swaps unlock-banner for a pro-widget.",
-        )
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
         }
@@ -339,15 +319,12 @@ fun RoutesDemoScreen(onBack: () -> Unit) {
 
     SakFeatureScreen(
         title = "Routes & navigation",
-        subtitle = "one shared NavHost + route table",
+        subtitle = "shared NavHost + route table",
     ) {
-        InfoCard(
-            "All scaffold and feature routes live in one graph. runtime.navigate() emits " +
-                "a one-shot navigationRoute that SakApp consumes.",
-        )
+        InfoCard("runtime.navigate() emits navigationRoute; RouteGuards may deny access.")
         SectionCard("routeTable (${routeTable.routes.size} routes)") {
             routeTable.routes.sorted().forEach { route ->
-                Text("\u00B7 $route", style = MaterialTheme.typography.bodySmall)
+                Text("· $route", style = MaterialTheme.typography.bodySmall)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -355,14 +332,14 @@ fun RoutesDemoScreen(onBack: () -> Unit) {
             onClick = { runtime.navigate(Route("analytics/today")) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Navigate \u2192 analytics/today")
+            Text("Navigate → analytics/today")
         }
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = { runtime.navigate(Route("licensing/upgrade")) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Navigate \u2192 licensing/upgrade")
+            Text("Navigate → licensing/upgrade")
         }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -371,10 +348,9 @@ fun RoutesDemoScreen(onBack: () -> Unit) {
     }
 }
 
-private fun sampleEntry(id: String, style: EntryStyle) = EntryPoint(
+private fun sampleEntry(id: String, kind: EntryKind) = EntryPoint(
     id = EntryPointId(id),
-    style = style,
-    previewKey = "demo.$id",
+    kind = kind,
     action = EntryAction.None,
     priority = 0,
 )
@@ -382,14 +358,12 @@ private fun sampleEntry(id: String, style: EntryStyle) = EntryPoint(
 private val proAnalyticsOverlay =
     """
     {
-      "version": 1,
+      "schema": 1,
+      "license": { "type": "pro" },
       "features": {
         "analytics": {
-          "enabled": true,
-          "visible": true,
-          "plan": "pro",
-          "grants": ["analytics.summary", "analytics.reports"],
-          "entries": { "allowed": ["summary-card", "report-row"] }
+          "state": "enabled",
+          "capabilities": ["analytics.summary", "analytics.reports"]
         }
       }
     }

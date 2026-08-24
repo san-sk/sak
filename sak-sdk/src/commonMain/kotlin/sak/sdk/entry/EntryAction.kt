@@ -3,20 +3,27 @@ package sak.sdk.entry
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** What happens when the user taps an entry point widget. */
+/**
+ * Activation behavior when the user taps or selects an [EntryPoint].
+ */
 @Serializable
 sealed class EntryAction {
-    /** Open a route in the host NavHost (e.g. `analytics/today`). */
+    /** Navigate to an in-app route in the shared NavHost. */
     @Serializable
     @SerialName("navigate")
     data class Navigate(val route: String) : EntryAction()
 
-    /** Open an external or app deep link URI. */
+    /** Open a deep link URI (host handles platform-specific routing). */
     @Serializable
     @SerialName("deepLink")
     data class DeepLink(val uri: String) : EntryAction()
 
-    /** Display-only widget; tap does nothing. */
+    /** Dispatch a host- or feature-defined command name. */
+    @Serializable
+    @SerialName("command")
+    data class Command(val name: String) : EntryAction()
+
+    /** Display-only — no activation handler. */
     @Serializable
     @SerialName("none")
     data object None : EntryAction()
