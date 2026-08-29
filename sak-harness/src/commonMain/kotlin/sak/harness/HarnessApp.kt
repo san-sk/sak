@@ -21,7 +21,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import sak.compose.ui.SakApp
+import sak.compose.ui.SakFeaturePlaceHolder
 import sak.compose.ui.SakLogo
 import sak.compose.ui.navContributors
 import sak.harness.demo.HarnessDemoRuntimeRef
@@ -30,8 +38,11 @@ import sak.harness.demo.InMemoryHarnessLogService
 import sak.runtime.AppServiceRegistry
 import sak.runtime.SakLauncher
 import sak.runtime.SakRuntime
+import sak.runtime.SakRuntimeProvider
 import sak.runtime.bundle.discoverFeatureModules
+import sak.debug.DebugDashboardScreen
 import sak.sample.licensing.SampleLicenseProvider
+import sak.sdk.bundle.FeatureModule
 import sak.sdk.bundle.SakDependencies
 import sak.sdk.config.AppConfig
 
@@ -47,8 +58,12 @@ fun HarnessApp(
         discoverFeatureModules(manualModules = harnessBundledFeatureModules)
     }
     val logService = remember { InMemoryHarnessLogService() }
-    val appServices = remember(logService) {
-        AppServiceRegistry(mapOf(HarnessLogService::class to logService))
+    val runtimeProvider = remember { SakRuntimeProvider() }
+    val appServices = remember(logService, runtimeProvider) {
+        AppServiceRegistry(mapOf(
+            HarnessLogService::class to logService,
+            SakRuntimeProvider::class to runtimeProvider
+        ))
     }
     val deps = SakDependencies(licenseProvider = licenseProvider)
 
@@ -61,6 +76,7 @@ fun HarnessApp(
                 deps = deps,
                 appServices = appServices,
             )
+            runtimeProvider.runtime = sakRuntime
             HarnessDemoRuntimeRef.runtime = sakRuntime
             runtime = sakRuntime
         }
@@ -70,10 +86,74 @@ fun HarnessApp(
     if (sakRuntime == null) {
         LoadingScreen()
     } else {
-        SakApp(
-            runtime = sakRuntime,
-            featureNavContributors = featureModules.navContributors(deps),
-        )
+        HarnessShell(sakRuntime, featureModules, deps)
+    }
+}
+
+@Composable
+fun HarnessShell(
+    runtime: SakRuntime,
+    featureModules: List<FeatureModule>,
+    deps: SakDependencies,
+) {
+    val navController = rememberNavController()
+    val contributors = remember(featureModules, deps) {
+        featureModules.navContributors(deps)
+    }
+    
+    SakApp(
+        runtime = runtime,
+        navController = navController,
+    ) { _ ->
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            bottomBar = {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = true,
+                        onClick = { navController.navigate("home") },
+                        icon = { Text("H") },
+                        label = { Text("Home") }
+                    )
+                    NavigationBarItem(
+                        selected = false,
+                        onClick = { navController.navigate("alerts") },
+                        icon = { Text("A") },
+                        label = { Text("Alerts") }
+                    )
+                }
+            }
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = "home",
+                modifier = Modifier.padding(innerPadding)
+            ) {
+                composable("home") {
+                    SakFeaturePlaceHolder(
+                        runtime = runtime,
+                        category = "home",
+                        onNavigate = { runtime.navigate(it) }
+                    )
+                }
+                composable("alerts") {
+                    SakFeaturePlaceHolder(
+                        runtime = runtime,
+                        category = "alerts",
+                        onNavigate = { runtime.navigate(it) }
+                    )
+                }
+                composable("sak/debug") {
+                    DebugDashboardScreen(
+                        runtime = runtime,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                // Register feature routes from modules (analytics, licensing, etc.)
+                contributors.forEach { it(this, navController) }
+            }
+        }
     }
 }
 

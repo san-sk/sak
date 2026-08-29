@@ -3,145 +3,99 @@ package sak.compose.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import sak.runtime.ResolvedEntry
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import sak.runtime.SakRuntime
 import sak.sdk.entry.EntryAction
+import sak.sdk.entry.EntryPoint
+import sak.sdk.feature.FeatureId
 import sak.sdk.navigation.Route
 
 /**
- * Reference Compose shell: top bar, bottom bar, scaffold destinations, and feature NavHost routes.
+ * Basic shell helper for features.
  *
- * Observe [sak.runtime.SakRuntime.renderPlan] and [sak.runtime.SakRuntime.navigationRoute].
- * Pass [featureNavContributors] from [navContributors] on bundled modules.
+ * Observe [sak.runtime.SakRuntime.navigationRoute] and handle feature navigation.
  */
 @Composable
 fun SakApp(
     runtime: SakRuntime,
+    navController: NavHostController = rememberNavController(),
     theme: SakTheme = { content -> MaterialTheme { content() } },
-    featureNavContributors: List<FeatureNavContributor> = emptyList(),
+    content: @Composable (padding: androidx.compose.foundation.layout.PaddingValues) -> Unit,
 ) {
-    val navController = rememberNavController()
-    val renderPlan by runtime.renderPlan.collectAsState()
     val pendingRoute by runtime.navigationRoute.collectAsState()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
 
     LaunchedEffect(pendingRoute) {
-        pendingRoute?.let { route ->
-            navController.navigate(route.value) {
-                launchSingleTop = true
-            }
-            runtime.clearNavigation()
+        val route = pendingRoute ?: return@LaunchedEffect
+
+        // Wait for graph to be set to avoid "Navigation graph has not been set" crash
+        snapshotFlow {
+            runCatching { navController.graph }.getOrNull()
+        }.filterNotNull().first()
+
+        navController.navigate(route.value) {
+            launchSingleTop = true
         }
+        runtime.clearNavigation()
     }
 
     theme {
-        Scaffold(
-            bottomBar = {
-                val items = renderPlan.scaffold.bottomBar.items
-                if (items.isNotEmpty()) {
-                    NavigationBar {
-                        items.forEach { item ->
-                            NavigationBarItem(
-                                selected = currentRoute == scaffoldRoute(item.destination),
-                                onClick = {
-                                    navController.navigate(scaffoldRoute(item.destination)) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = {
-                                    if (sakBarIconSupported(item.icon)) {
-                                        SakBarIcon(name = item.icon)
-                                    } else {
-                                        Text(item.label.take(1))
-                                    }
-                                },
-                                label = { Text(item.label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ),
-                            )
-                        }
-                    }
-                }
-            },
-        ) { padding ->
-            NavHost(
-                navController = navController,
-                startDestination = scaffoldRoute("home"),
-                modifier = Modifier.padding(padding),
-            ) {
-                renderPlan.scaffold.destinations.keys.forEach { destinationId ->
-                    composable(scaffoldRoute(destinationId)) {
-                        ScaffoldDestination(
-                            destinationId = destinationId,
-                            entries = renderPlan.destinations[destinationId] ?: emptyList(),
-                            onNavigate = { route -> navController.navigate(route.value) },
-                        )
-                    }
-                }
-                featureNavContributors.forEach { contributor ->
-                    contributor(this, navController)
-                }
-            }
+        Scaffold { padding ->
+            content(padding)
         }
     }
 }
 
-private fun scaffoldRoute(destinationId: String): String = "scaffold/$destinationId"
-
 @Composable
-private fun ScaffoldDestination(
-    destinationId: String,
-    entries: List<ResolvedEntry>,
+fun SakFeaturePlaceHolder(
+    runtime: SakRuntime,
+    category: String,
     onNavigate: (Route) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val activeConfig by runtime.activeConfig.collectAsState()
+    
+    // Resolve entries reactively. For Lazy features, this will update when they load.
+    val entries by produceState<List<Pair<FeatureId, EntryPoint>>>(initialValue = emptyList(), activeConfig) {
+        val resolved = mutableListOf<Pair<FeatureId, EntryPoint>>()
+        activeConfig.features.keys.forEach { idVal ->
+            val id = FeatureId(idVal)
+            // Trigger lazy load and wait if enabled
+            val feature = runtime.getFeature(id)
+            if (feature != null) {
+                feature.entryPoints.value
+                    .filter { it.categories.contains(category) }
+                    .forEach { resolved.add(id to it) }
+            }
+        }
+        value = resolved.sortedByDescending { it.second.priority }
+    }
+
     Column(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = modifier
+            .fillMaxWidth()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = destinationId.replaceFirstChar { it.uppercase() },
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = "Entry points hosted by active features",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         if (entries.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -150,20 +104,24 @@ private fun ScaffoldDestination(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "No entry points for this destination",
+                    text = "No entry points for $category",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
-            entries.forEach { resolved ->
+            entries.forEach { pair ->
+                val featureId = pair.first
+                val entry = pair.second
+                val feature = runtime.getFeatureOrNull(featureId)
                 SakEntryWidget(
-                    featureId = resolved.featureId,
-                    entry = resolved.entry,
+                    feature = feature,
+                    entry = entry,
                     onClick = {
-                        when (val action = resolved.entry.action) {
+                        when (val action = entry.action) {
                             is EntryAction.Navigate -> onNavigate(Route(action.route))
                             is EntryAction.DeepLink -> onNavigate(Route(action.uri))
+                            is EntryAction.Custom -> { /* Host handles custom */ }
                             EntryAction.None -> Unit
                         }
                     },
