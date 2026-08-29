@@ -1,82 +1,76 @@
-# SAK — Standard Application Kit
+# SAK: Standard Application Kit
 
-Kotlin Multiplatform platform for **Android and iOS** — build business features once and host them in mobile apps. Access is driven by **JSON config** with an optional **signed license overlay**.
+**A Protocol-First Kotlin Multiplatform framework for building scalable, modular "Super-Apps".**
 
-This repo contains the **platform**, a **demo harness**, and two sample features.
+SAK allows independent teams to develop business features in pure Kotlin and host them in a unified, dynamically configurable shell on Android (Compose) and iOS (SwiftUI).
 
 ---
 
-## Quick start
+## 🚀 Key Value Propositions
 
-| Platform | Guide |
-|----------|--------|
-| **Architecture** | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — SDK, runtime, Mermaid diagrams |
-| **Android** | [docs/ANDROID.md](docs/ANDROID.md) — build, run harness, embed in your app |
-| **iOS** | [docs/IOS.md](docs/IOS.md) — Xcode, Simulator, embed framework |
-| **Config JSON** | [docs/config-schema.md](docs/config-schema.md) |
+- **Protocol-First**: The core SDK acts as a lean contract layer. High-fidelity UI is provided through platform-specific bridges.
+- **Host-Driven Layout**: The host app owns the navigation and layout, injecting feature widgets into placeholders at runtime.
+- **Reactive Licensing**: Features instantly unlock or adapt based on a signed, cryptographically verified license configuration.
+- **Resilient Runtime**: Built with a "Sandbox" strategy using `SupervisorJob` to ensure one buggy feature can't crash the whole app.
+- **Zero-Maintenance Discovery**: Automated feature registration on iOS using KSP (Kotlin Symbol Processing).
+
+---
+
+## 🏗️ System Overview
+
+```mermaid
+flowchart LR
+    Host[Host App] <--> Runtime[SakRuntime Engine]
+    Runtime <--> FeatureA[Feature A]
+    Runtime <--> FeatureB[Feature B]
+    
+    subgraph "The Bridge"
+        FeatureA -- Compose UI --> Android[Android App]
+        FeatureA -- SwiftUI UI --> iOS[iOS App]
+    end
+```
+
+---
+
+## 📚 Choose Your Path
+
+| I want to... | Start Here |
+| :--- | :--- |
+| **Understand the Architecture** | [Architecture Guide](docs/ARCHITECTURE.md) & [Sequence Flows](docs/FLOWS.md) |
+| **Build a New Feature** | [Feature Developer Guide](docs/GUIDE_FEATURE.md) |
+| **Integrate SAK into a Host App** | [Host Integrator Guide](docs/GUIDE_HOST.md) |
+| **Set up a specific platform** | [Android Setup](docs/ANDROID.md) · [iOS Setup](docs/IOS.md) |
+| **Understand Config & Licensing** | [Configuration Schema](docs/CONFIG.md) |
+
+---
+
+## 🛠️ Repository Layout
+
+- `sak-sdk/`: Core interfaces, lifecycle definitions, and data models (Pure Kotlin).
+- `sak-runtime/`: The engine that manages configuration, lifecycles, and feature instantiation.
+- `sak-compose-ui/`: Android/Compose rendering helpers and standard widgets.
+- `sak-ios-bridge/`: Headless bridge for native SwiftUI/UIKit integration.
+- `sak-ksp-processor/`: Tooling for automated iOS feature discovery.
+- `sak-library-debug/`: Observability dashboard to monitor feature health in real-time.
+- `sak-harness/`: Reference Android host application.
+- `iosSwiftApp/`: Reference iOS host application.
+
+---
+
+## 🚦 Quick Start (Android)
 
 ```bash
-# Android
+# Install the demo harness on your device/emulator
 ./gradlew :sak-harness:installDebug
-
-# iOS framework (Compose harness)
-./gradlew :sak-harness:linkDebugFrameworkIosSimulatorArm64
-# Then open iosApp/iosApp.xcodeproj and run
-
-# iOS framework (SwiftUI harness)
-./gradlew :sak-ios-bridge:linkDebugFrameworkIosSimulatorArm64
-# Then open iosSwiftApp/iosSwiftApp.xcodeproj and run
 ```
 
----
-
-## Repository layout
-
-```text
-sak-sdk/           Contracts (Feature, config, entry points) — no Compose
-sak-runtime/       Engine (lifecycle, config merge, render plan)
-sak-compose-ui/    SakApp scaffold + NavHost
-sak-ios-bridge/    Headless iOS bridge (SakIosHost) for native SwiftUI/UIKit
-sample-analytics/  Example feature
-sample-licensing/  Example licensing + LicenseProvider
-sak-harness/       Demo app (Android + iOS Compose framework)
-iosApp/            Xcode wrapper — Compose harness (SakHarness)
-iosSwiftApp/       Xcode wrapper — SwiftUI harness (SakIosBridge)
-docs/              Platform guides + config schema
-```
+Open the "SAK Observability" dashboard from the home screen to see the live status of all bundled features.
 
 ---
 
-## Core loop
+## 🗺️ Future Roadmap
 
-1. Host loads **DefaultConfig** (JSON).
-2. Host bundles **feature modules** and calls **`SakLauncher.launch`**.
-3. Runtime merges license overlay → **ActiveConfig**, activates features.
-4. **`SakApp`** renders scaffold (bottom bar + destinations) and feature routes in one NavHost.
+See the [ROADMAP.md](docs/ROADMAP.md) for upcoming improvements including type-safe navigation contracts and desktop/web support.
 
 ---
-
-## Prerequisites
-
-- JDK 17+
-- Android SDK (compile 35, min 26) for Android
-- macOS + Xcode for iOS (Kotlin 2.4.10 certifies Xcode up to 26.4)
-
----
-
-## Key concepts
-
-| Term | Meaning |
-|------|---------|
-| **Feature** | Pluggable module: entry points, routes, `FeatureStatus` |
-| **EntryPoint** | Widget on a scaffold tab; can navigate into the feature |
-| **setupComplete** | Feature reports when internal init is done (`FeatureStatus`) |
-| **ActiveConfig** | DefaultConfig + signed license `features` overlay |
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for flowcharts (launch, config merge, lifecycle, navigation, iOS vs Android). Code comments in `sak-sdk` and `sak-runtime` describe each type in detail.
-
----
-
-## License
-
-Personal project by san. All rights reserved.
+*Created by san. All rights reserved.*

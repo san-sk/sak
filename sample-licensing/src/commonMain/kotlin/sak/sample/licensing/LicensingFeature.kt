@@ -13,6 +13,7 @@ import sak.sdk.entry.EntryStyle
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureContext
 import sak.sdk.feature.FeatureId
+import sak.sdk.feature.FeatureState
 import sak.sdk.feature.FeatureStatus
 import sak.sdk.license.LicenseProvider
 import sak.sdk.navigation.Route
@@ -44,17 +45,20 @@ class LicensingFeature(
     override fun apis(): Set<FeatureApi<*>> =
         setOf(featureApi(LicenseProvider::class, licenseProvider))
 
+    override suspend fun onCreate(context: FeatureContext) {
+    }
+
+    override suspend fun onDestroy() {
+    }
+
     override suspend fun onActivated(context: FeatureContext) {
         _access.value = context.access
         publishEntries(context.access)
+        _status.value = _status.value.copy(state = FeatureState.Ready)
     }
 
     override suspend fun onDeactivated() {
         _entryPoints.value = emptyList()
-    }
-
-    override suspend fun onReset() {
-        _status.value = FeatureStatus()
     }
 
     override suspend fun onAccessChanged(context: FeatureContext) {
@@ -67,8 +71,8 @@ class LicensingFeature(
         val entries = mutableListOf(
             EntryPoint(
                 id = EntryPointId("plan-row"),
+                type = "summary",
                 style = EntryStyle.Row,
-                previewKey = "licensing.plan",
                 action = EntryAction.Navigate("licensing/upgrade"),
                 priority = 5,
                 categories = setOf("home"),
@@ -77,8 +81,8 @@ class LicensingFeature(
         entries += if (pro) {
             EntryPoint(
                 id = EntryPointId("pro-widget"),
+                type = "summary",
                 style = EntryStyle.Widget,
-                previewKey = "licensing.pro",
                 action = EntryAction.Navigate("licensing/upgrade"),
                 priority = 8,
                 categories = setOf("home"),
@@ -86,8 +90,8 @@ class LicensingFeature(
         } else {
             EntryPoint(
                 id = EntryPointId("unlock-banner"),
+                type = "summary",
                 style = EntryStyle.Banner,
-                previewKey = "licensing.unlock",
                 action = EntryAction.Navigate("licensing/upgrade"),
                 priority = 9,
                 categories = setOf("home"),

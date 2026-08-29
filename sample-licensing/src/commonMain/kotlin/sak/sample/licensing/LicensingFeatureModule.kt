@@ -4,6 +4,7 @@ import sak.compose.ui.FeatureNavigationModule
 import sak.compose.ui.FeatureNavContributor
 import sak.sdk.bundle.FeatureModule
 import sak.sdk.bundle.SakDependencies
+import sak.sdk.bundle.SakModule
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureId
 
@@ -11,6 +12,7 @@ import sak.sdk.feature.FeatureId
  * Convention: package `sak.sample.licensing` → feature id `licensing`.
  * Registered for Android via META-INF/services.
  */
+@SakModule
 object LicensingFeatureModule : FeatureModule, FeatureNavigationModule {
     /** Last created licensing feature instance — screens read its access StateFlow. */
     var feature: LicensingFeature? = null

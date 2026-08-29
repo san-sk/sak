@@ -27,22 +27,47 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import sak.sdk.entry.EntryPoint
 import sak.sdk.entry.EntryStyle
+import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureId
+import sak.sdk.feature.FeatureState
 
 /**
- * Renders one entry-point widget on a scaffold destination, styled by [EntryPoint.style]:
- * [EntryStyle.Card], [EntryStyle.Row], [EntryStyle.Banner], [EntryStyle.Tile],
- * [EntryStyle.Widget], or [EntryStyle.Custom] (falls back to card).
+ * Renders one entry-point widget.
+ *
+ * If [feature] implements [ComposeFeature], it delegates to [ComposeFeature.EntryPointView].
+ * Otherwise, it falls back to data-driven generic widgets styled by [EntryPoint.style].
  */
 @Composable
 fun SakEntryWidget(
-    featureId: FeatureId,
+    feature: Feature?,
     entry: EntryPoint,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (feature != null) {
+        val status by feature.status.collectAsState()
+        if (status.state is FeatureState.Error) {
+            SakErrorWidget(
+                featureId = feature.id,
+                error = (status.state as FeatureState.Error).message,
+                modifier = modifier
+            )
+            return
+        }
+    }
+
+    if (feature is ComposeFeature) {
+        Box(modifier = modifier.clickable(onClick = onClick)) {
+            feature.EntryPointView(id = entry.id, modifier = Modifier)
+        }
+        return
+    }
+
+    val featureId = feature?.id ?: FeatureId("unknown")
     val accent = remember(featureId) { entryAccentColor(featureId) }
     val title = entry.id.value.replace('-', ' ').replaceFirstChar { it.uppercase() }
 
@@ -52,6 +77,26 @@ fun SakEntryWidget(
         EntryStyle.Tile -> SakTileWidget(featureId, title, accent, onClick, modifier)
         EntryStyle.Widget -> SakWidgetWidget(featureId, title, accent, onClick, modifier)
         EntryStyle.Card, EntryStyle.Custom -> SakCardWidget(featureId, entry, title, accent, onClick, modifier)
+    }
+}
+
+@Composable
+private fun SakErrorWidget(
+    featureId: FeatureId,
+    error: String,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = "Error in ${featureId.value}", style = MaterialTheme.typography.labelLarge)
+            Text(text = error, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

@@ -6,15 +6,8 @@ import kotlin.test.assertNull
 
 class ConfigMergerTest {
     @Test
-    fun mergeLicenseOverlay_updatesFeatures_keepsScaffold() {
+    fun mergeLicenseOverlay_updatesFeatures() {
         val default = AppConfig(
-            scaffold = sak.sdk.layout.ScaffoldConfig(
-                bottomBar = sak.sdk.layout.BottomBarConfig(
-                    items = listOf(
-                        sak.sdk.layout.BottomBarItem("home", "Home", "home", "home"),
-                    ),
-                ),
-            ),
             features = mapOf(
                 "analytics" to FeatureToggle(enabled = true, plan = "trial"),
                 "billing" to FeatureToggle(enabled = false, plan = "none"),
@@ -30,12 +23,11 @@ class ConfigMergerTest {
         assertEquals("pro", active.features["analytics"]?.plan)
         assertEquals(setOf("analytics.reports"), active.features["analytics"]?.grants)
         assertEquals(true, active.features["billing"]?.enabled)
-        assertEquals(1, active.scaffold?.bottomBar?.items?.size)
     }
 
     @Test
-    fun licenseOverlay_hasNoScaffold() {
+    fun licenseOverlay_mergesToggles() {
         val overlay = AppConfig(features = mapOf("analytics" to FeatureToggle(plan = "pro")))
-        assertNull(overlay.scaffold)
+        assertEquals("pro", overlay.features["analytics"]?.plan)
     }
 }

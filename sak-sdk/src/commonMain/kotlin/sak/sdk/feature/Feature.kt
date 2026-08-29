@@ -3,6 +3,7 @@ package sak.sdk.feature
 import kotlinx.coroutines.flow.StateFlow
 import sak.sdk.api.FeatureApi
 import sak.sdk.entry.EntryPoint
+import sak.sdk.navigation.NavigationContract
 import sak.sdk.navigation.Route
 
 /**
@@ -30,17 +31,29 @@ interface Feature {
     /** Internal screens this feature owns (e.g. `analytics/today`). */
     val routes: List<Route>
 
+    /** Optional navigation contract for typed access to this feature's screens. */
+    val navContract: NavigationContract? get() = null
+
     /** Optional APIs other features or the host can look up (e.g. [sak.sdk.license.LicenseProvider]). */
     fun apis(): Set<FeatureApi<*>> = emptySet()
 
-    /** Feature became enabled in ActiveConfig — start setup, register screens, publish entry points. */
+    /**
+     * Initial setup when the runtime starts. Called once per app session.
+     * Heavy initialization (DB, long-lived connections) should start here.
+     */
+    suspend fun onCreate(context: FeatureContext)
+
+    /**
+     * Runtime is shutting down or feature is being permanently removed.
+     * Release all long-lived resources.
+     */
+    suspend fun onDestroy()
+
+    /** Feature became enabled in ActiveConfig — register screens, publish entry points. */
     suspend fun onActivated(context: FeatureContext)
 
-    /** Feature disabled or app shutting down — release resources, clear flows. */
+    /** Feature disabled in ActiveConfig — clear flows and stop UI updates. */
     suspend fun onDeactivated()
-
-    /** User cleared data or host requested reset — wipe local state. */
-    suspend fun onReset()
 
     /** Plan, grants, or entries changed (usually after a license update). */
     suspend fun onAccessChanged(context: FeatureContext) {}

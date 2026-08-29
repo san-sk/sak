@@ -27,13 +27,14 @@ final class SakHostModel: ObservableObject {
         let featureId: String
         let entryId: String
         let style: String
-        let resolved: Sak_runtimeResolvedEntry
+        let resolved: IosResolvedEntry
     }
 
     func start() {
-        host.setRenderPlanListener { [weak self] plan in
+        host.setConfigListener { [weak self] _ in
             DispatchQueue.main.async {
-                self?.applyRenderPlan(plan)
+                self?.refreshTabs()
+                self?.refreshEntries()
             }
         }
         host.setNavigationListener { [weak self] route in
@@ -42,6 +43,14 @@ final class SakHostModel: ObservableObject {
             }
         }
         host.start()
+    }
+
+    private func refreshTabs() {
+        // Host defines layout
+        tabs = [
+            TabItem(id: "home", label: "Home", icon: "house", destination: "home"),
+            TabItem(id: "alerts", label: "Alerts", icon: "bell", destination: "alerts")
+        ]
     }
 
     func selectDestination(_ destination: String) {
@@ -66,32 +75,22 @@ final class SakHostModel: ObservableObject {
         activeRoute = nil
     }
 
-    private func applyRenderPlan(_ plan: Sak_runtimeRenderPlan) {
-        let items = host.bottomBarItems()
-        tabs = items.map { item in
-            TabItem(
-                id: item.id,
-                label: item.label,
-                icon: item.icon,
-                destination: item.destination
-            )
-        }
-        if !tabs.contains(where: { $0.destination == selectedDestination }) {
-            selectedDestination = tabs.first?.destination ?? "home"
-        }
-        refreshEntries()
-    }
-
     private func refreshEntries() {
-        let resolved = host.entriesForDestination(destinationId: selectedDestination)
-        entries = resolved.map { entry in
-            EntryRow(
-                id: "\(entry.featureId.value)-\(entry.entry.id.value)",
-                featureId: entry.featureId.value,
-                entryId: entry.entry.id.value,
-                style: entry.entry.style.name,
-                resolved: entry
-            )
+        // Handle suspend function from Kotlin
+        host.entriesForCategory(category: selectedDestination) { [weak self] resolved, error in
+            if let resolved = resolved {
+                DispatchQueue.main.async {
+                    self?.entries = resolved.map { entry in
+                        EntryRow(
+                            id: "\(entry.featureId.value)-\(entry.entry.id.value)",
+                            featureId: entry.featureId.value,
+                            entryId: entry.entry.id.value,
+                            style: entry.entry.style.name,
+                            resolved: entry
+                        )
+                    }
+                }
+            }
         }
     }
 }

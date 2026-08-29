@@ -20,4 +20,12 @@ sealed class EntryAction {
     @Serializable
     @SerialName("none")
     data object None : EntryAction()
+
+    /** Custom action handled by the host app. */
+    @Serializable
+    @SerialName("custom")
+    data class Custom(
+        val id: String,
+        val params: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap()
+    ) : EntryAction()
 }

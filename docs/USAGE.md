@@ -1,124 +1,74 @@
-# SAK Usage Guide
+# SAK Quick Start Guide
 
-This guide provides step-by-step instructions for implementing features and hosting the SAK runtime.
+Welcome to SAK! This 5-minute guide will get you up and running with the framework.
 
 ---
 
-## For Feature Developers
+## 🚦 For Feature Developers
 
-### 1. Define your Feature
-Implement the `Feature` interface in `commonMain`. Focus on publishing `EntryPoints` based on the current `access` (entitlements).
+### 1. Create your module
+Implement the `Feature` interface in `commonMain`.
 
 ```kotlin
-class MyFeature : Feature {
-    override val id = FeatureId("my-feature")
+class NewsFeature : Feature {
+    override val id = FeatureId("news")
     
-    private val _status = MutableStateFlow(FeatureStatus())
-    override val status = _status.asStateFlow()
-
-    private val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
+    // Publish a simple card
+    private val _entryPoints = MutableStateFlow(listOf(
+        EntryPoint(id = EntryPointId("headline"), type = "summary", ...)
+    ))
     override val entryPoints = _entryPoints.asStateFlow()
 
-    override suspend fun onCreate(context: FeatureContext) {
-        // Heavy init (DB, SDKs) starts here
-    }
-
     override suspend fun onActivated(context: FeatureContext) {
-        // Feature enabled in config - publish your cards/widgets
-        publishEntries(context.access)
-        _status.value = _status.value.copy(state = FeatureState.Ready)
-    }
-
-    private fun publishEntries(access: FeatureToggle) {
-        _entryPoints.value = listOf(
-            EntryPoint(
-                id = EntryPointId("main-card"),
-                type = "summary",
-                style = EntryStyle.Card,
-                action = EntryAction.Navigate("my-feature/main"),
-                categories = setOf("home")
-            )
-        )
+        // Init logic
     }
 }
 ```
 
-### 2. Provide Platform UI
-Implement the `ComposeFeature` interface in `androidMain` (or `commonMain` for Compose Multiplatform).
-
-```kotlin
-// In sak-compose-ui compatible module
-class MyFeatureModule : FeatureModule, ComposeFeature {
-    // ...
-    @Composable
-    override fun EntryPointView(id: EntryPointId, modifier: Modifier) {
-        when(id.value) {
-            "main-card" -> MyCustomCard(modifier)
-        }
-    }
-}
-```
-
-### 3. Register your Module
-Annotate your `FeatureModule` object with `@SakModule` for iOS discovery and ensure `META-INF/services` is set up for Android.
+### 2. Register for Discovery
+Add the `@SakModule` annotation to your factory object.
 
 ```kotlin
 @SakModule
-object MyFeatureModule : FeatureModule {
-    override val id = FeatureId("my-feature")
-    override fun create(deps: SakDependencies) = MyFeature()
+object NewsModule : FeatureModule {
+    override val id = FeatureId("news")
+    override fun create(deps: SakDependencies) = NewsFeature()
 }
 ```
 
 ---
 
-## For Host Developers
+## 🏢 For Host Developers
 
-### 1. Bootstrap the Runtime
-Initialize the `SakLauncher` with your bundled modules and configuration.
+### 1. Launch the Runtime
+Start the engine in your application entry point.
 
 ```kotlin
-val launcher = SakLauncher(appScope)
-val runtime = launcher.launch(
-    defaultConfig = loadConfig(),
-    featureModules = discoverFeatureModules(),
-    deps = SakDependencies(licenseProvider = myLicense)
+val runtime = SakLauncher(scope).launch(
+    defaultConfig = myConfig,
+    featureModules = discoverFeatureModules()
 )
 ```
 
-### 2. Build the Shell (Android/Compose)
-Use `SakApp` and `SakFeaturePlaceHolder` to build your UI.
+### 2. Add Placeholders
+Place widgets in your Compose (Android) or SwiftUI (iOS) layout.
 
 ```kotlin
-SakApp(runtime = runtime) { padding ->
-    Scaffold(
-        bottomBar = { MyNavigationBar(navController) }
-    ) { innerPadding ->
-        NavHost(...) {
-            composable("home") {
-                SakFeaturePlaceHolder(
-                    runtime = runtime,
-                    category = "home",
-                    onNavigate = { runtime.navigate(it) }
-                )
-            }
-        }
-    }
-}
+// Android
+SakFeaturePlaceHolder(runtime, category = "home", ...)
+
+// iOS
+let entries = host.entriesForCategory(category: "home")
 ```
 
-### 3. Build the Shell (iOS/SwiftUI)
-Use `SakIosHost` to bridge data to your native views.
+---
 
-```swift
-let host = SakIosHost()
-host.setConfigListener { config in
-    // Re-render native tabs
-}
-host.start()
+## 🛠️ Debugging
+Include the `:sak-library-debug` module in your debug build to access the **SAK Observability Dashboard**. Navigate to `sak/debug` in your app to see live feature states and configurations.
 
-// In a View
-ForEach(host.entriesForCategory(category: "home"), id: \.id) { entry in
-    // Render native card or call feature's native view
-}
-```
+---
+
+## 📖 Deep Dives
+- [Feature Developer Guide](GUIDE_FEATURE.md)
+- [Host Integrator Guide](GUIDE_HOST.md)
+- [Configuration Reference](CONFIG.md)

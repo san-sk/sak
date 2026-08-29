@@ -9,8 +9,3 @@ data class FeatureRegistration(
     val factoryClass: String,
     val sdkVersion: String = "1.0.0",
 )
-
-/** Catalog of features bundled into a host app. */
-interface BundledFeatures {
-    val registrations: List<FeatureRegistration>
-}

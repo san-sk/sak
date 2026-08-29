@@ -35,6 +35,7 @@ kotlin {
             implementation(project(":sak-runtime"))
             implementation(project(":sample-analytics"))
             implementation(project(":sample-licensing"))
+            implementation(project(":sak-library-debug"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.androidx.navigation.compose.multiplatform)

@@ -21,15 +21,22 @@ enum class IntroState {
 }
 
 /**
- * Feature-reported state. Observed by the host shell for badges, setup gates, and readiness.
- *
- * Config `enabled`/`visible` control activation; [setupComplete] is the feature's own init signal.
+ * Lifecycle states reported by the feature to the host.
+ */
+sealed class FeatureState {
+    /** Feature is performing internal initialization (onCreate). */
+    object Initializing : FeatureState()
+    /** Feature is ready for user interaction and has published EntryPoints. */
+    object Ready : FeatureState()
+    /** Feature encountered a terminal error and cannot function. */
+    data class Error(val message: String) : FeatureState()
+}
+
+/**
+ * Feature-reported status. Observed by the host shell for readiness and health.
  */
 data class FeatureStatus(
-    val enabled: Boolean = true,
-    val visible: Boolean = true,
-    /** True when internal init finished (SDK connected, cache loaded, permissions granted). */
-    val setupComplete: Boolean = true,
+    val state: FeatureState = FeatureState.Initializing,
     val attention: Attention = Attention.None,
     val introSeen: IntroState = IntroState.Done,
 )

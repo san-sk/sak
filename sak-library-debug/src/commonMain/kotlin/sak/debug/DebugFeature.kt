@@ -19,6 +19,7 @@ import sak.sdk.entry.*
 import sak.sdk.feature.*
 import sak.sdk.navigation.Route
 import sak.runtime.SakRuntime
+import sak.runtime.SakRuntimeProvider
 
 /**
  * A feature that provides an observability dashboard for all loaded SAK features.
@@ -34,11 +35,11 @@ class DebugFeature : Feature, ComposeFeature {
 
     override val routes = listOf(Route("sak/debug"))
 
-    private var runtime: SakRuntime? = null
+    private var runtimeProvider: SakRuntimeProvider? = null
 
     override suspend fun onCreate(context: FeatureContext) {
-        // We expect the host to provide SakRuntime as a service for the debug feature
-        runtime = context.services.find(SakRuntime::class)
+        // We expect the host to provide SakRuntimeProvider as a service for the debug feature
+        runtimeProvider = context.services.find(SakRuntimeProvider::class)
     }
 
     override suspend fun onActivated(context: FeatureContext) {
@@ -59,11 +60,17 @@ class DebugFeature : Feature, ComposeFeature {
     }
 
     override suspend fun onDestroy() {
-        runtime = null
+        runtimeProvider = null
     }
 
     @Composable
     override fun EntryPointView(id: EntryPointId, modifier: Modifier) {
+        val runtime = runtimeProvider?.runtime
+        if (runtime == null) {
+            Text("Debug info unavailable")
+            return
+        }
+        
         Card(
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -80,6 +87,7 @@ class DebugFeature : Feature, ComposeFeature {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DebugDashboardScreen(runtime: SakRuntime, onBack: () -> Unit) {
     val statuses by runtime.allStatuses.collectAsState()

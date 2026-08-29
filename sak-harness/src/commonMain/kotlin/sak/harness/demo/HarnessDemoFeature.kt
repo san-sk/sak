@@ -13,6 +13,7 @@ import sak.sdk.feature.Attention
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureContext
 import sak.sdk.feature.FeatureId
+import sak.sdk.feature.FeatureState
 import sak.sdk.feature.FeatureStatus
 import sak.sdk.license.LicenseProvider
 import sak.sdk.navigation.Route
@@ -46,11 +47,21 @@ class HarnessDemoFeature : Feature {
 
     private var context: FeatureContext? = null
 
+    override suspend fun onCreate(context: FeatureContext) {
+        this.context = context
+        append("onCreate")
+    }
+
+    override suspend fun onDestroy() {
+        append("onDestroy")
+    }
+
     override suspend fun onActivated(context: FeatureContext) {
         this.context = context
         _access.value = context.access
         append("onActivated (plan=${context.access.plan})")
         _entryPoints.value = demoEntries()
+        _status.value = _status.value.copy(state = FeatureState.Ready)
     }
 
     override suspend fun onAccessChanged(context: FeatureContext) {
@@ -64,17 +75,13 @@ class HarnessDemoFeature : Feature {
         _entryPoints.value = emptyList()
     }
 
-    override suspend fun onReset() {
-        _status.value = FeatureStatus()
-        _log.value = listOf("onReset")
-    }
-
     fun setSetupComplete(done: Boolean) {
-        _status.value = _status.value.copy(setupComplete = done)
-        append("status.setupComplete = $done")
+        val newState = if (done) FeatureState.Ready else FeatureState.Initializing
+        _status.value = _status.value.copy(state = newState)
+        append("status.state = $newState")
     }
 
-    fun setAttention(attention: Attention) {
+    fun setAttention(attention: sak.sdk.feature.Attention) {
         _status.value = _status.value.copy(attention = attention)
         append("status.attention = $attention")
     }
@@ -103,8 +110,8 @@ class HarnessDemoFeature : Feature {
 
     private fun demoEntry(id: String, route: String, priority: Int) = EntryPoint(
         id = EntryPointId(id),
+        type = "demo",
         style = EntryStyle.Card,
-        previewKey = "demo.$id",
         action = EntryAction.Navigate("demos/$route"),
         priority = priority,
         categories = setOf("demo"),

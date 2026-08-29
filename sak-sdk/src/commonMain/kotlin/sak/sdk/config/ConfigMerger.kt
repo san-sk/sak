@@ -21,7 +21,6 @@ fun AppConfig.mergeLicenseOverlay(overlay: AppConfig): AppConfig {
     }
     return copy(
         version = overlay.version,
-        scaffold = scaffold,
         features = mergedFeatures,
     )
 }

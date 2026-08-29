@@ -11,6 +11,7 @@ import sak.sdk.entry.EntryStyle
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureContext
 import sak.sdk.feature.FeatureId
+import sak.sdk.feature.FeatureState
 import sak.sdk.feature.FeatureStatus
 import sak.sdk.navigation.Route
 
@@ -37,17 +38,20 @@ class AnalyticsFeature : Feature {
         Route("analytics/report/{reportId}"),
     )
 
+    override suspend fun onCreate(context: FeatureContext) {
+    }
+
+    override suspend fun onDestroy() {
+    }
+
     override suspend fun onActivated(context: FeatureContext) {
         _access.value = context.access
         publishEntries(context.access)
+        _status.value = _status.value.copy(state = FeatureState.Ready)
     }
 
     override suspend fun onDeactivated() {
         _entryPoints.value = emptyList()
-    }
-
-    override suspend fun onReset() {
-        _status.value = FeatureStatus()
     }
 
     override suspend fun onAccessChanged(context: FeatureContext) {
@@ -60,8 +64,8 @@ class AnalyticsFeature : Feature {
         val entries = mutableListOf(
             EntryPoint(
                 id = EntryPointId("summary-card"),
+                type = "summary",
                 style = EntryStyle.Card,
-                previewKey = "analytics.summary",
                 action = EntryAction.Navigate("analytics/today"),
                 priority = 10,
                 categories = setOf("home"),
@@ -70,8 +74,8 @@ class AnalyticsFeature : Feature {
         if (!pro) {
             entries += EntryPoint(
                 id = EntryPointId("trial-tile"),
+                type = "summary",
                 style = EntryStyle.Tile,
-                previewKey = "analytics.trial",
                 action = EntryAction.Navigate("analytics/today"),
                 priority = 3,
                 categories = setOf("home"),
@@ -80,8 +84,8 @@ class AnalyticsFeature : Feature {
         if (pro) {
             entries += EntryPoint(
                 id = EntryPointId("report-row"),
+                type = "alert",
                 style = EntryStyle.Row,
-                previewKey = "analytics.report",
                 action = EntryAction.Navigate("analytics/report/weekly"),
                 priority = 5,
                 categories = setOf("alerts"),

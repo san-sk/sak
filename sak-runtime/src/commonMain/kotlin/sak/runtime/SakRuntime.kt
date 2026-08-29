@@ -2,24 +2,31 @@ package sak.runtime
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import sak.sdk.config.AppConfig
 import sak.sdk.config.SakJson
 import sak.sdk.config.mergeLicenseOverlay
 import sak.sdk.feature.Feature
 import sak.sdk.feature.FeatureId
+import sak.sdk.feature.FeatureStatus
 import sak.sdk.license.LicenseProvider
 import sak.sdk.license.LicenseVerifier
 import sak.sdk.license.SignedLicensePayload
 import sak.sdk.navigation.Route
 
 /**
- * Application-scoped SAK engine: config merge, feature lifecycle, scaffold render plan, navigation.
+ * Application-scoped SAK engine: config merge, feature lifecycle, navigation.
  *
- * Observe [renderPlan] and [navigationRoute] from Compose; call [start] once from the host.
+ * Observe [activeConfig] and [navigationRoute] from the Host UI.
  */
 class SakRuntime(
     private val defaultConfig: AppConfig,
@@ -32,24 +39,13 @@ class SakRuntime(
     /** DefaultConfig merged with the current license overlay. */
     val activeConfig: StateFlow<AppConfig> = _activeConfig.asStateFlow()
 
-    private val _renderPlan = MutableStateFlow(RenderPlan(sak.sdk.layout.ScaffoldConfig(), emptyMap()))
-    /** Scaffold bottom bar + resolved entry widgets per destination. Drives [sak.compose.ui.SakApp]. */
-    val renderPlan: StateFlow<RenderPlan> = _renderPlan.asStateFlow()
-
-    private val _routeTable = MutableStateFlow(RouteTable(emptySet()))
-    /** All routes from active features (deep links, validation). */
-    val routeTable: StateFlow<RouteTable> = _routeTable.asStateFlow()
-
     private val apiRegistry = ApiRegistry()
-    private val lifecycle = FeatureLifecycle(apiRegistry, ::navigate)
+    private val lifecycle = FeatureLifecycle(apiRegistry, ::navigate, scope)
 
     private var licenseProvider: LicenseProvider? = null
 
-    /** Compose entry-preview registry for a feature (null if not active). */
-    fun screenRegistry(featureId: FeatureId): ScreenRegistryImpl? = lifecycle.screenRegistry(featureId)
-
     /**
-     * Apply initial license, subscribe to [LicenseProvider.updates], and activate features.
+     * Apply initial license, subscribe to [LicenseProvider.updates], and initialize features.
      */
     suspend fun start(licenseProvider: LicenseProvider? = null) {
         this.licenseProvider = licenseProvider
@@ -64,6 +60,36 @@ class SakRuntime(
             }
         }
     }
+
+    /** Shutdown the runtime and all features. */
+    suspend fun stop() {
+        lifecycle.shutdown()
+    }
+
+    /** Access to active features for platform UI bridge. Trigger lazy load if needed. */
+    suspend fun getFeature(id: FeatureId): Feature? = 
+        lifecycle.getOrInstantiate(id, featureFactories, appServiceRegistry.lookup(), activeConfig.value)
+
+    /**
+     * Synchronous check for a feature. Does NOT trigger lazy loading.
+     */
+    fun getFeatureOrNull(id: FeatureId): Feature? = lifecycle.activeFeatures()[id]
+
+    /**
+     * Observable map of all features (instantiated) and their current status.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allStatuses: StateFlow<Map<FeatureId, FeatureStatus>> = 
+        activeConfig.flatMapLatest { _ ->
+            val activeFeatures = lifecycle.activeFeatures()
+            if (activeFeatures.isEmpty()) return@flatMapLatest flowOf(emptyMap<FeatureId, FeatureStatus>())
+            
+            combine(activeFeatures.map { (id, feature) ->
+                feature.status.map { status -> id to status }
+            }) { pairs ->
+                pairs.toMap()
+            }
+        }.stateIn(scope, SharingStarted.WhileSubscribed(), emptyMap())
 
     /** Dev helper: apply a raw JSON overlay without going through [LicenseProvider]. */
     suspend fun applyDevLicenseOverlay(overlayJson: String) {
@@ -87,13 +113,6 @@ class SakRuntime(
         }
         _activeConfig.value = merged
         lifecycle.apply(merged, featureFactories, appServiceRegistry.lookup())
-        refreshDerivedState(merged)
-    }
-
-    private fun refreshDerivedState(config: AppConfig) {
-        val features = lifecycle.activeFeatures()
-        _renderPlan.value = ScaffoldRenderer.build(config.scaffold, config, features)
-        _routeTable.value = RouteMerger.build(features)
     }
 
     /** Request navigation on the host NavHost (notifications, deep links, feature callbacks). */

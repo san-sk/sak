@@ -6,23 +6,31 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import sak.runtime.RenderPlan
-import sak.runtime.ResolvedEntry
+import kotlinx.coroutines.flow.collectLatest
+import sak.sdk.entry.EntryPoint
+import sak.sdk.feature.FeatureId
 import sak.runtime.SakLauncher
 import sak.runtime.SakRuntime
 import sak.runtime.bundle.discoverFeatureModules
 import sak.sample.licensing.SampleLicenseProvider
 import sak.sdk.bundle.SakDependencies
+import sak.sdk.bundle.sakDiscoveredModules
 import sak.sdk.config.AppConfig
 import sak.sdk.config.SakJson
-import sak.sdk.layout.BottomBarItem
 import sak.sdk.navigation.Route
+
+/**
+ * Resolved entry for iOS consumption.
+ */
+data class IosResolvedEntry(
+    val featureId: FeatureId,
+    val entry: EntryPoint
+)
 
 /**
  * Headless SAK host for native iOS UI (SwiftUI, UIKit, …).
  *
- * Observes [RenderPlan] from [SakRuntime] and exposes data for the shell to render.
- * Does not use Compose — see [sak.compose.ui.SakApp] for the Compose reference shell.
+ * Observes [AppConfig] from [SakRuntime] and exposes data for the shell to render.
  */
 class SakIosHost {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -30,20 +38,20 @@ class SakIosHost {
     private var observeJob: Job? = null
     private val licenseProvider = SampleLicenseProvider()
 
-    private var renderPlanListener: ((RenderPlan) -> Unit)? = null
+    private var configListener: ((AppConfig) -> Unit)? = null
     private var navigationListener: ((String) -> Unit)? = null
 
-    private var latestPlan: RenderPlan? = null
+    private var latestConfig: AppConfig? = null
 
     /** Route to open when the user taps an entry widget. */
-    fun navigationTargetFor(entry: ResolvedEntry): String? = entry.navigationTarget()
+    fun navigationTargetFor(entry: IosResolvedEntry): String? = entry.navigationTarget()
 
     /** Start runtime with the demo harness config and bundled sample features. */
     fun start() {
         if (runtime != null) return
         scope.launch {
             val config = loadHarnessConfig()
-            val modules = discoverFeatureModules(manualModules = iosHarnessBundledFeatureModules)
+            val modules = discoverFeatureModules(manualModules = sakDiscoveredModules)
             val deps = SakDependencies(licenseProvider = licenseProvider)
             val launcher = SakLauncher(scope)
             val sakRuntime = launcher.launch(
@@ -53,13 +61,13 @@ class SakIosHost {
             )
             runtime = sakRuntime
             observeJob = scope.launch {
-                sakRuntime.renderPlan.collect { plan ->
-                    latestPlan = plan
-                    renderPlanListener?.invoke(plan)
+                sakRuntime.activeConfig.collectLatest { config ->
+                    latestConfig = config
+                    configListener?.invoke(config)
                 }
             }
             scope.launch {
-                sakRuntime.navigationRoute.collect { route ->
+                sakRuntime.navigationRoute.collectLatest { route ->
                     if (route != null) {
                         navigationListener?.invoke(route.value)
                         sakRuntime.clearNavigation()
@@ -69,30 +77,37 @@ class SakIosHost {
         }
     }
 
-    /** Subscribe to scaffold updates (bottom bar + destination entries). Replacing listener re-delivers latest plan. */
-    fun setRenderPlanListener(listener: ((RenderPlan) -> Unit)?) {
-        renderPlanListener = listener
-        latestPlan?.let { listener?.invoke(it) }
+    /** Subscribe to config updates. */
+    fun setConfigListener(listener: ((AppConfig) -> Unit)?) {
+        configListener = listener
+        latestConfig?.let { listener?.invoke(it) }
     }
 
-    /** Subscribe to one-shot navigation requests (entry taps, feature callbacks). Route is a string path. */
+    /** Subscribe to one-shot navigation requests. */
     fun setNavigationListener(listener: ((String) -> Unit)?) {
         navigationListener = listener
     }
 
-    /** Last [RenderPlan] snapshot, or null before [start] completes. */
-    fun currentRenderPlan(): RenderPlan? = latestPlan
+    /** Resolved entry widgets for a category (e.g. `home`, `alerts`). */
+    suspend fun entriesForCategory(category: String): List<IosResolvedEntry> {
+        val config = latestConfig ?: return emptyList()
+        val runtime = runtime ?: return emptyList()
+        
+        val resolved = mutableListOf<IosResolvedEntry>()
+        config.features.keys.forEach { idVal ->
+            val id = FeatureId(idVal)
+            val feature = runtime.getFeature(id)
+            if (feature != null) {
+                feature.entryPoints.value
+                    .filter { it.categories.contains(category) }
+                    .forEach { resolved.add(IosResolvedEntry(id, it)) }
+            }
+        }
+        return resolved.sortedByDescending { it.entry.priority }
+    }
 
-    /** Bottom navigation items from the active render plan. */
-    fun bottomBarItems(): List<BottomBarItem> =
-        latestPlan?.scaffold?.bottomBar?.items ?: emptyList()
-
-    /** Resolved entry widgets for a scaffold destination id (e.g. `home`, `alerts`). */
-    fun entriesForDestination(destinationId: String): List<ResolvedEntry> =
-        latestPlan?.destinations[destinationId] ?: emptyList()
-
-    /** Apply entry tap — navigates via runtime when the entry has a route action. */
-    fun onEntrySelected(entry: ResolvedEntry) {
+    /** Apply entry tap. */
+    fun onEntrySelected(entry: IosResolvedEntry) {
         val target = entry.navigationTarget()
         if (target != null) {
             runtime?.navigate(Route(target))
