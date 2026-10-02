@@ -1,76 +1,91 @@
 # SAK: Standard Application Kit
 
-**A Protocol-First Kotlin Multiplatform framework for building scalable, modular "Super-Apps".**
+**A Protocol-First, UI-Agnostic Kotlin Multiplatform (KMP) Framework for Modular Super-Apps & Micro-Frontends.**
 
-SAK allows independent teams to develop business features in pure Kotlin and host them in a unified, dynamically configurable shell on Android (Compose) and iOS (SwiftUI).
+SAK allows independent teams to develop business features in pure Kotlin and host them in a unified, dynamically configurable shell on Android (Jetpack Compose) and iOS (SwiftUI).
 
 ---
 
-## 🚀 Key Value Propositions
+## 🚀 Key Architectural Principles
 
-- **Protocol-First**: The core SDK acts as a lean contract layer. High-fidelity UI is provided through platform-specific bridges.
-- **Host-Driven Layout**: The host app owns the navigation and layout, injecting feature widgets into placeholders at runtime.
-- **Reactive Licensing**: Features instantly unlock or adapt based on a signed, cryptographically verified license configuration.
-- **Resilient Runtime**: Built with a "Sandbox" strategy using `SupervisorJob` to ensure one buggy feature can't crash the whole app.
-- **Zero-Maintenance Discovery**: Automated feature registration on iOS using KSP (Kotlin Symbol Processing).
+- **Protocol-First & UI-Agnostic**: Core SAK contains zero UI view dependencies. Features publish metadata descriptors (`EntryPoint`) into slot categories (`"home"`, `"alerts"`), and host apps decide how to render them using native Compose or SwiftUI.
+- **Pure Interface Contracts**: Features implement `interface Feature : LifecycleOwner` directly (`class AnalyticsFeature : Feature`). No forced single-inheritance abstract base classes.
+- **Direct Platform Lifecycle Sync**: `Feature` extends `androidx.lifecycle.LifecycleOwner`. Feature lifecycles (`onCreate`, `onConfigChanged`, `onDestroy`) automatically sync with the host platform container (Android `ComponentActivity` / Compose `LocalLifecycleOwner` or SwiftUI scene phase).
+- **Dynamic Access & Licensing**: Features reactively respond to configuration updates (`SakConfig` & `FeatureAccess`), adapting entitlements and entry points in real time.
+- **Unified Dependency Registry**: Single `ServiceRegistry` for host services and cross-feature APIs.
+- **Flexible Feature Discovery**: Choose between explicit code registration or automatic detection via `FeatureRegistry`.
 
 ---
 
 ## 🏗️ System Overview
 
 ```mermaid
-flowchart LR
-    Host[Host App] <--> Runtime[SakRuntime Engine]
-    Runtime <--> FeatureA[Feature A]
-    Runtime <--> FeatureB[Feature B]
-    
-    subgraph "The Bridge"
-        FeatureA -- Compose UI --> Android[Android App]
-        FeatureA -- SwiftUI UI --> iOS[iOS App]
+flowchart TB
+    subgraph Host["Host Application Shell"]
+        AndroidHost["harness-android (Jetpack Compose)"]
+        iOSHost["harness-ios (SwiftUI)"]
     end
+
+    subgraph Engine["sak-runtime"]
+        Runtime["SakRuntime Engine"]
+        Lifecycle["FeatureLifecycle Manager"]
+        ServiceReg["Unified ServiceRegistry"]
+        FeatReg["FeatureRegistry"]
+    end
+
+    subgraph Core["sak-sdk"]
+        Feature["Feature Interface (LifecycleOwner)"]
+        Access["SakConfig & FeatureAccess"]
+        Entry["EntryPoint Metadata"]
+    end
+
+    subgraph Features["Feature Modules"]
+        Analytics["sample-analytics"]
+        Licensing["sample-licensing"]
+        Custom["Custom Feature Module"]
+    end
+
+    AndroidHost --> Runtime
+    iOSHost --> Runtime
+    Runtime --> Lifecycle
+    Runtime --> ServiceReg
+    Runtime --> FeatReg
+    Lifecycle --> Feature
+    Feature --> Access
+    Feature --> Entry
+    Features --> Feature
 ```
 
 ---
 
-## 📚 Choose Your Path
+## 📂 Repository Structure
 
-| I want to... | Start Here |
+| Module | Purpose |
 | :--- | :--- |
-| **Understand the Architecture** | [Architecture Guide](docs/ARCHITECTURE.md) & [Sequence Flows](docs/FLOWS.md) |
-| **Build a New Feature** | [Feature Developer Guide](docs/GUIDE_FEATURE.md) |
-| **Integrate SAK into a Host App** | [Host Integrator Guide](docs/GUIDE_HOST.md) |
-| **Set up a specific platform** | [Android Setup](docs/ANDROID.md) · [iOS Setup](docs/IOS.md) |
-| **Understand Config & Licensing** | [Configuration Schema](docs/CONFIG.md) |
-
----
-
-## 🛠️ Repository Layout
-
-- `sak-sdk/`: Core interfaces, lifecycle definitions, and data models (Pure Kotlin).
-- `sak-runtime/`: The engine that manages configuration, lifecycles, and feature instantiation.
-- `sak-compose-ui/`: Android/Compose rendering helpers and standard widgets.
-- `sak-ios-bridge/`: Headless bridge for native SwiftUI/UIKit integration.
-- `sak-ksp-processor/`: Tooling for automated iOS feature discovery.
-- `sak-library-debug/`: Observability dashboard to monitor feature health in real-time.
-- `sak-harness/`: Reference Android host application.
-- `iosSwiftApp/`: Reference iOS host application.
+| **`sak-sdk/`** | Pure KMP contracts (`Feature`, `FeatureAccess`, `EntryPoint`, `SakConfig`). |
+| **`sak-runtime/`** | Engine orchestrating configuration merging, lifecycles, and `ServiceRegistry`. |
+| **`harness-android/`** | Reference Android host application demonstrating Compose UI slot rendering. |
+| **`harness-ios/`** | Reference iOS host application demonstrating SwiftUI integration. |
+| **`sample-analytics/`** | Sample business feature module. |
+| **`sample-licensing/`** | Sample licensing provider feature module. |
 
 ---
 
 ## 🚦 Quick Start (Android)
 
 ```bash
-# Install the demo harness on your device/emulator
-./gradlew :sak-harness:installDebug
+# Build and install the Android harness app
+./gradlew :harness-android:installDebug
 ```
-
-Open the "SAK Observability" dashboard from the home screen to see the live status of all bundled features.
 
 ---
 
-## 🗺️ Future Roadmap
+## 🗺️ Documentation
 
-See the [ROADMAP.md](docs/ROADMAP.md) for upcoming improvements including type-safe navigation contracts and desktop/web support.
+- 📐 [Architecture Guide](docs/ARCHITECTURE.md)
+- 🔄 [Sequence Flows & Lifecycle](docs/FLOWS.md)
+- 🧩 [Feature Developer Guide](docs/GUIDE_FEATURE.md)
+- ⚙️ [Configuration & Licensing](docs/CONFIG.md)
 
 ---
 *Created by san. All rights reserved.*

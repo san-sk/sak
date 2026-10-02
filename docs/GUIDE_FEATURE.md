@@ -1,102 +1,100 @@
 # Feature Developer Guide
 
-This guide explains how to build a business feature for the SAK platform.
+This guide explains how to build a business feature module for the SAK platform.
 
 ---
 
 ## 1. The Core Interface
-Your feature must implement the `Feature` interface in `commonMain`.
-
-### Lifecycle Hooks
-- **`onCreate(context)`**: Heavy setup (Database, long-lived sockets). This is called only once.
-- **`onActivated(context)`**: The feature is enabled in config. This is where you should publish your entry points and routes.
-- **`onAccessChanged(context)`**: The user's plan or entitlements updated. Re-calculate and publish entries here.
-- **`onDeactivated()`**: Stop background flows and clear internal state.
-- **`onDestroy()`**: Release all resources.
-
-### Publishing Entry Points
-Use the `entryPoints` flow to tell the host what widgets you have available.
+Your feature implements the `Feature` interface in `commonMain` (or optionally extends `BaseFeature`).
 
 ```kotlin
-private val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
-override val entryPoints = _entryPoints.asStateFlow()
+class MyAnalyticsFeature : Feature {
+    override val id = FeatureId("analytics")
+    
+    private val _status = MutableStateFlow<FeatureStatus>(FeatureStatus())
+    override val status = _status.asStateFlow()
 
-private fun publishEntries(access: FeatureToggle) {
-    _entryPoints.value = listOf(
-        EntryPoint(
-            id = EntryPointId("summary-card"),
-            type = "summary",
-            style = EntryStyle.Card,
-            action = EntryAction.Navigate("analytics/today"),
-            priority = 10,
-            categories = setOf("home")
+    private val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
+    override val entryPoints = _entryPoints.asStateFlow()
+
+    override val routes = listOf(Route("analytics/today"))
+
+    override suspend fun onCreate(context: FeatureContext) {
+        publishEntries(context.access)
+    }
+
+    override suspend fun onConfigChanged(access: FeatureAccess) {
+        publishEntries(access)
+    }
+
+    override suspend fun onDestroy() {
+        _entryPoints.value = emptyList()
+    }
+
+    private fun publishEntries(access: FeatureAccess) {
+        _entryPoints.value = listOf(
+            EntryPoint(
+                id = EntryPointId("summary-card"),
+                type = "summary",
+                style = EntryStyle.Card,
+                action = EntryAction.Navigate("analytics/today"),
+                priority = 10,
+                categories = setOf("home")
+            )
         )
-    )
-}
-```
-
----
-
-## 2. Using the FeatureContext
-The `context` provided in lifecycle hooks gives you access to vital platform capabilities:
-
-- **`coroutineScope`**: A managed scope that is automatically cancelled when your feature stops. Use this for all background work.
-- **`access`**: The current configuration (Plan, Grants, Attributes).
-- **`typedAttr<T>(key)`**: Easily parse JSON config attributes into Kotlin data classes.
-- **`apis`**: Look up capabilities provided by other features.
-
----
-
-## 3. Platform-Native UI
-To provide a custom widget, implement the bridge interface for your target platforms.
-
-### Android (Compose)
-Implement `ComposeFeature` in your module.
-
-```kotlin
-class MyFeature : Feature, ComposeFeature {
-    @Composable
-    override fun EntryPointView(id: EntryPointId, modifier: Modifier) {
-        when(id.value) {
-            "summary-card" -> MySummaryCard(modifier)
-        }
     }
 }
 ```
 
----
-
-## 4. Cross-Feature Communication
-Features can expose their own APIs for others to use.
-
-### Exporting an API
-```kotlin
-interface MyAnalyticsApi {
-    fun logEvent(name: String)
-}
-
-// In your Feature implementation:
-override fun apis() = setOf(featureApi(MyAnalyticsApi::class, myProvider))
-```
-
-### Consuming an API
-```kotlin
-val analytics = context.apis.find(MyAnalyticsApi::class)
-analytics?.logEvent("tab_opened")
-```
+### 3 Clean Lifecycle Methods
+- **`onCreate(context: FeatureContext)`**: Called when feature is instantiated and bound to host platform lifecycle.
+- **`onConfigChanged(access: FeatureAccess)`**: Called when license overlays or entitlement grants update.
+- **`onDestroy()`**: Called when feature is deactivated or runtime shuts down. Release long-lived resources.
 
 ---
 
-## 5. Automated Registration
-To ensure your feature is found on all platforms:
-1.  **Android**: Add your `FeatureModule` class name to `META-INF/services/sak.sdk.bundle.FeatureModule`.
-2.  **iOS**: Annotate your `FeatureModule` object with `@SakModule`.
+## 2. Using the `FeatureContext`
+
+The `FeatureContext` provided to your feature gives access to runtime capabilities:
+
+- **`coroutineScope`**: Managed coroutine scope automatically cancelled when your feature stops.
+- **`lifecycle`**: Platform lifecycle reference (`androidx.lifecycle.Lifecycle`).
+- **`access`**: Current `FeatureAccess` snapshot (`enabled`, `plan`, `grants`, `attrs`).
+- **`services`**: Unified `ServiceLookup` container for host services and cross-feature APIs.
 
 ```kotlin
-@SakModule
-object MyFeatureModule : FeatureModule {
-    override val id = FeatureId("my-feature")
-    override val priority = LoadingPriority.Lazy // Instantiate only when needed
-    override fun create(deps: SakDependencies) = MyFeature()
+// Example: Looking up a service provided by host or another feature
+val logService = context.services.find(HarnessLogService::class)
+logService?.log("Feature initialized")
+```
+
+---
+
+## 3. Exporting Services / APIs
+
+Features can export services for use by other features or the host app:
+
+```kotlin
+interface MyFeatureApi {
+    fun doSomething()
 }
+
+class MyFeature : BaseFeature() {
+    override fun services(): Set<FeatureService<*>> =
+        setOf(featureService(MyFeatureApi::class, myApiProvider))
+}
+```
+
+---
+
+## 4. Feature Registration
+
+Features are registered into `FeatureRegistry`:
+
+```kotlin
+val registry = FeatureRegistry.of(
+    AnalyticsFeature(),
+    LicensingFeature(licenseProvider),
+    MyCustomFeature()
+)
 ```

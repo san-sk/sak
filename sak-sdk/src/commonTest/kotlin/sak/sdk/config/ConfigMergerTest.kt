@@ -2,21 +2,20 @@ package sak.sdk.config
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 class ConfigMergerTest {
     @Test
     fun mergeLicenseOverlay_updatesFeatures() {
-        val default = AppConfig(
+        val default = SakConfig(
             features = mapOf(
-                "analytics" to FeatureToggle(enabled = true, plan = "trial"),
-                "billing" to FeatureToggle(enabled = false, plan = "none"),
+                "analytics" to FeatureAccess(enabled = true, plan = "trial"),
+                "billing" to FeatureAccess(enabled = false, plan = "none"),
             ),
         )
-        val overlay = AppConfig(
+        val overlay = SakConfig(
             features = mapOf(
-                "analytics" to FeatureToggle(plan = "pro", grants = setOf("analytics.reports")),
-                "billing" to FeatureToggle(enabled = true, plan = "pro"),
+                "analytics" to FeatureAccess(plan = "pro", grants = setOf("analytics.reports")),
+                "billing" to FeatureAccess(enabled = true, plan = "pro"),
             ),
         )
         val active = default.mergeLicenseOverlay(overlay)
@@ -26,8 +25,25 @@ class ConfigMergerTest {
     }
 
     @Test
-    fun licenseOverlay_mergesToggles() {
-        val overlay = AppConfig(features = mapOf("analytics" to FeatureToggle(plan = "pro")))
+    fun licenseOverlay_mergesAccess() {
+        val overlay = SakConfig(features = mapOf("analytics" to FeatureAccess(plan = "pro")))
         assertEquals("pro", overlay.features["analytics"]?.plan)
+    }
+
+    @Test
+    fun mergeLicenseOverlay_revokesGrants() {
+        val default = SakConfig(
+            features = mapOf(
+                "analytics" to FeatureAccess(enabled = true, plan = "pro", grants = setOf("analytics.reports", "analytics.export")),
+            ),
+        )
+        val revokedOverlay = SakConfig(
+            features = mapOf(
+                "analytics" to FeatureAccess(enabled = true, plan = "trial", grants = emptySet()),
+            ),
+        )
+        val active = default.mergeLicenseOverlay(revokedOverlay)
+        assertEquals(emptySet(), active.features["analytics"]?.grants)
+        assertEquals("trial", active.features["analytics"]?.plan)
     }
 }

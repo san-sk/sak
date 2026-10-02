@@ -54,7 +54,8 @@ internal val harnessDefaultConfigJson: String =
           "visible": true,
           "plan": "complete",
           "attrs": { "maxReports": 3, "expiry": "2027-01-01" }
-        }
+        },
+        "sak-debug": { "enabled": true, "visible": true }
       }
     }
     """.trimIndent()

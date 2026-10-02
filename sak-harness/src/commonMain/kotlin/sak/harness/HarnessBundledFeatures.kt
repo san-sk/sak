@@ -1,16 +1,19 @@
 package sak.harness
 
-import sak.harness.demo.HarnessDemoFeatureModule
-import sak.sample.analytics.AnalyticsFeatureModule
-import sak.sample.licensing.LicensingFeatureModule
-import sak.sdk.bundle.FeatureModule
+import sak.harness.demo.DebugFeature
+import sak.harness.demo.HarnessDemoFeature
+import sak.runtime.FeatureRegistry
+import sak.sample.analytics.AnalyticsFeature
+import sak.sample.licensing.LicensingFeature
+import sak.sample.licensing.SampleLicenseProvider
 
 /**
- * iOS cannot use ServiceLoader — list bundled modules here.
- * On Android, META-INF/services still auto-discovers; this list merges as fallback.
+ * Registry of bundled sample features for harness app.
  */
-internal val harnessBundledFeatureModules: List<FeatureModule> = listOf(
-    AnalyticsFeatureModule,
-    LicensingFeatureModule,
-    HarnessDemoFeatureModule,
-)
+internal fun createHarnessRegistry(licenseProvider: SampleLicenseProvider): FeatureRegistry =
+    FeatureRegistry.of(
+        AnalyticsFeature(),
+        LicensingFeature(licenseProvider),
+        HarnessDemoFeature(),
+        DebugFeature(),
+    )

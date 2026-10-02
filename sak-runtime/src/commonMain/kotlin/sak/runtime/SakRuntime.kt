@@ -1,6 +1,9 @@
 package sak.runtime
 
+import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +15,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import sak.sdk.config.AppConfig
+import sak.sdk.config.SakConfig
 import sak.sdk.config.SakJson
 import sak.sdk.config.mergeLicenseOverlay
 import sak.sdk.feature.Feature
@@ -25,33 +28,31 @@ import sak.sdk.navigation.Route
 
 /**
  * Application-scoped SAK engine: config merge, feature lifecycle, navigation.
- *
- * Observe [activeConfig] and [navigationRoute] from the Host UI.
  */
 class SakRuntime(
-    private val defaultConfig: AppConfig,
-    private val featureFactories: Map<FeatureId, () -> Feature>,
-    private val appServiceRegistry: AppServiceRegistry = AppServiceRegistry(),
+    private val defaultConfig: SakConfig = SakConfig(),
+    private val featureRegistry: FeatureRegistry = FeatureRegistry(),
+    private val serviceRegistry: ServiceRegistry = ServiceRegistry(),
     private val licenseVerifier: LicenseVerifier = AcceptAllLicenseVerifier,
     private val scope: CoroutineScope,
+    hostLifecycle: Lifecycle,
 ) {
     private val _activeConfig = MutableStateFlow(defaultConfig)
-    /** DefaultConfig merged with the current license overlay. */
-    val activeConfig: StateFlow<AppConfig> = _activeConfig.asStateFlow()
 
-    private val apiRegistry = ApiRegistry()
-    private val lifecycle = FeatureLifecycle(apiRegistry, ::navigate, scope)
+    /** DefaultConfig merged with current license overlay. */
+    val activeConfig: StateFlow<SakConfig> = _activeConfig.asStateFlow()
 
-    private var licenseProvider: LicenseProvider? = null
+    private val lifecycle = FeatureLifecycle(serviceRegistry, ::navigate, hostLifecycle)
+    private var licenseJob: Job? = null
 
     /**
-     * Apply initial license, subscribe to [LicenseProvider.updates], and initialize features.
+     * Start the runtime and subscribe to license updates.
      */
     suspend fun start(licenseProvider: LicenseProvider? = null) {
-        this.licenseProvider = licenseProvider
         applyLicense(licenseProvider?.resolveLicense())
         licenseProvider?.let { provider ->
-            scope.launch {
+            licenseJob?.cancel()
+            licenseJob = scope.launch {
                 provider.updates.collectLatest { payload ->
                     if (licenseVerifier.verify(payload)) {
                         mergeAndApply(payload.config)
@@ -63,27 +64,29 @@ class SakRuntime(
 
     /** Shutdown the runtime and all features. */
     suspend fun stop() {
+        licenseJob?.cancel()
+        licenseJob = null
         lifecycle.shutdown()
     }
 
-    /** Access to active features for platform UI bridge. Trigger lazy load if needed. */
-    suspend fun getFeature(id: FeatureId): Feature? = 
-        lifecycle.getOrInstantiate(id, featureFactories, appServiceRegistry.lookup(), activeConfig.value)
+    /** Access active feature by ID. Triggers lazy load if needed. */
+    suspend fun getFeature(id: FeatureId): Feature? =
+        lifecycle.getOrInstantiate(
+            id,
+            featureRegistry.factories(),
+            activeConfig.value
+        )
 
-    /**
-     * Synchronous check for a feature. Does NOT trigger lazy loading.
-     */
+    /** Synchronous check for an active feature instance. */
     fun getFeatureOrNull(id: FeatureId): Feature? = lifecycle.activeFeatures()[id]
 
-    /**
-     * Observable map of all features (instantiated) and their current status.
-     */
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val allStatuses: StateFlow<Map<FeatureId, FeatureStatus>> = 
+    /** Observable map of all features and their health status. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allStatuses: StateFlow<Map<FeatureId, FeatureStatus>> =
         activeConfig.flatMapLatest { _ ->
             val activeFeatures = lifecycle.activeFeatures()
             if (activeFeatures.isEmpty()) return@flatMapLatest flowOf(emptyMap<FeatureId, FeatureStatus>())
-            
+
             combine(activeFeatures.map { (id, feature) ->
                 feature.status.map { status -> id to status }
             }) { pairs ->
@@ -91,9 +94,9 @@ class SakRuntime(
             }
         }.stateIn(scope, SharingStarted.WhileSubscribed(), emptyMap())
 
-    /** Dev helper: apply a raw JSON overlay without going through [LicenseProvider]. */
+    /** Development helper: apply raw JSON overlay. */
     suspend fun applyDevLicenseOverlay(overlayJson: String) {
-        val overlay = SakJson.decodeFromString(AppConfig.serializer(), overlayJson)
+        val overlay = SakJson.decodeFromString(SakConfig.serializer(), overlayJson)
         mergeAndApply(overlay)
     }
 
@@ -105,32 +108,38 @@ class SakRuntime(
         }
     }
 
-    private suspend fun mergeAndApply(overlay: AppConfig?) {
+    private suspend fun mergeAndApply(overlay: SakConfig?) {
         val merged = if (overlay != null) {
             defaultConfig.mergeLicenseOverlay(overlay)
         } else {
             defaultConfig
         }
         _activeConfig.value = merged
-        lifecycle.apply(merged, featureFactories, appServiceRegistry.lookup())
+        lifecycle.apply(merged, featureRegistry.factories(), serviceRegistry.lookup())
     }
 
-    /** Request navigation on the host NavHost (notifications, deep links, feature callbacks). */
+    /** Request navigation on the host NavHost if route is allowed. */
     fun navigate(route: Route) {
+        val featureId = route.value.substringBefore('/')
+        val access = _activeConfig.value.features[featureId]
+        if (access != null && !access.isRouteAllowed(route.value)) {
+            return
+        }
         _navigationRoute.value = route
     }
 
     private val _navigationRoute = MutableStateFlow<Route?>(null)
-    /** One-shot navigation signal — consumed by SakApp then cleared via [clearNavigation]. */
+
+    /** One-shot navigation signal. */
     val navigationRoute: StateFlow<Route?> = _navigationRoute.asStateFlow()
 
-    /** Consume the one-shot [navigationRoute] after handling in the host UI. */
+    /** Clear navigation signal after host consumes it. */
     fun clearNavigation() {
         _navigationRoute.value = null
     }
 }
 
-/** Development verifier — accepts all licenses. Replace in production hosts. */
+/** Development verifier — accepts all licenses. */
 object AcceptAllLicenseVerifier : LicenseVerifier {
     override fun verify(payload: SignedLicensePayload): Boolean = true
 }

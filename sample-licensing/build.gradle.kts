@@ -22,7 +22,6 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":sak-sdk"))
-            implementation(project(":sak-compose-ui"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.androidx.navigation.compose.multiplatform)

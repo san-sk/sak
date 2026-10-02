@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.compose.multiplatform)
 }
@@ -21,8 +22,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":sak-sdk"))
-            implementation(project(":sak-compose-ui"))
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.serialization.json)
             implementation(libs.androidx.navigation.compose.multiplatform)
             implementation(compose.runtime)
             implementation(compose.foundation)

@@ -7,16 +7,12 @@ This guide covers bootstrapping SAK in an Android application using Jetpack Comp
 ## 1. Setup
 
 ### Add Dependencies
-Include the SAK core and UI libraries in your `build.gradle.kts`:
+Include the SAK core libraries in your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
     implementation(project(":sak-sdk"))
     implementation(project(":sak-runtime"))
-    implementation(project(":sak-compose-ui"))
-    
-    // Optional: Observability Dashboard (Debug only)
-    debugImplementation(project(":sak-library-debug"))
 }
 ```
 
@@ -24,7 +20,7 @@ dependencies {
 
 ## 2. Bootstrapping
 
-In your `MainActivity`, initialize the `SakLauncher`.
+In your `MainActivity` or host Composable, initialize `SakRuntime`.
 
 ```kotlin
 class MainActivity : ComponentActivity() {
@@ -34,18 +30,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             val scope = rememberCoroutineScope()
             var runtime by remember { mutableStateOf<SakRuntime?>(null) }
+            val hostLifecycle = LocalLifecycleOwner.current.lifecycle
 
             LaunchedEffect(Unit) {
-                runtime = SakLauncher(scope).launch(
+                val sakRuntime = SakRuntime(
                     defaultConfig = loadConfig(),
-                    featureModules = discoverFeatureModules()
+                    featureRegistry = FeatureRegistry.of(
+                        AnalyticsFeature(),
+                        LicensingFeature(licenseProvider),
+                    ),
+                    scope = scope,
+                    hostLifecycle = hostLifecycle,
                 )
+                sakRuntime.start(licenseProvider)
+                runtime = sakRuntime
             }
 
             runtime?.let { rt ->
-                SakApp(runtime = rt) {
-                    MainShell(rt)
-                }
+                HarnessShell(rt)
             }
         }
     }
@@ -54,27 +56,33 @@ class MainActivity : ComponentActivity() {
 
 ---
 
-## 3. Creating the Shell
+## 3. Rendering Feature Slots
 
-Use `SakFeaturePlaceHolder` to inject feature entry points into specific layout areas.
+Host apps consume SAK `EntryPoint` metadata descriptors reactively to render UI slots.
 
 ```kotlin
 @Composable
-fun MainShell(runtime: SakRuntime) {
-    Scaffold(
-        bottomBar = { MyBottomNav() }
-    ) { innerPadding ->
-        NavHost(...) {
-            composable("home") {
-                // Renders all feature widgets marked with "home" category
-                SakFeaturePlaceHolder(
-                    runtime = runtime,
-                    category = "home",
-                    onNavigate = { route -> navController.navigate(route.value) }
-                )
+fun ComposeFeatureSlot(
+    runtime: SakRuntime,
+    category: String,
+) {
+    val activeConfig by runtime.activeConfig.collectAsState()
+
+    val entries by produceState<List<Pair<FeatureId, EntryPoint>>>(initialValue = emptyList(), activeConfig) {
+        val resolved = mutableListOf<Pair<FeatureId, EntryPoint>>()
+        activeConfig.features.keys.forEach { idVal ->
+            val id = FeatureId(idVal)
+            val feature = runtime.getFeature(id)
+            if (feature != null) {
+                feature.entryPoints.value
+                    .filter { it.categories.contains(category) }
+                    .forEach { resolved.add(id to it) }
             }
         }
+        value = resolved.sortedByDescending { it.second.priority }
     }
+
+    // Render cards, rows, or banners based on entries...
 }
 ```
 
@@ -85,5 +93,5 @@ fun MainShell(runtime: SakRuntime) {
 | Issue | Solution |
 | :--- | :--- |
 | Feature not loading | Check if the feature is `enabled` in `default-config.json`. |
-| Discovery failed | Verify `META-INF/services/sak.sdk.bundle.FeatureModule` exists in the feature module. |
-| UI Crash | Check the **SAK Observability Dashboard** (`sak/debug`) to see if the feature is in an `ERROR` state. |
+| License Overlay not applying | Verify JSON schema version and feature keys match. |
+| UI Crash | Check the **SAK Observability Dashboard** (`sak/debug`) to inspect feature health state. |

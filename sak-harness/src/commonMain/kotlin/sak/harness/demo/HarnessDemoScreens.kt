@@ -1,41 +1,22 @@
 package sak.harness.demo
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import kotlinx.coroutines.launch
-import sak.compose.ui.FieldRow
-import sak.compose.ui.InfoCard
-import sak.compose.ui.SakEntryWidget
-import sak.compose.ui.SakFeatureScreen
-import sak.compose.ui.SectionCard
 import sak.sdk.entry.EntryAction
 import sak.sdk.entry.EntryPoint
 import sak.sdk.entry.EntryPointId
 import sak.sdk.entry.EntryStyle
 import sak.sdk.feature.Attention
-import sak.sdk.feature.FeatureId
 import sak.sdk.feature.FeatureState
 import sak.sdk.navigation.Route
 import sak.sample.licensing.SampleLicenseProvider
+import sak.sdk.feature.FeatureId
 
 /** Registers all demo routes on the shared SAK NavHost. */
 fun NavGraphBuilder.harnessDemoNavigation(onBack: () -> Unit) {
@@ -54,13 +35,13 @@ fun ConfigDemoScreen(onBack: () -> Unit) {
     val runtime = HarnessDemoRuntimeRef.runtime ?: return
     val activeConfig by runtime.activeConfig.collectAsState()
 
-    SakFeatureScreen(
-        title = "Config-driven logic",
-        subtitle = "ActiveConfig JSON drives feature behavior",
-    ) {
-        SectionCard("Active features (features)") {
-            activeConfig.features.forEach { (id, toggle) ->
-                FieldRow(id, "enabled=${toggle.enabled} \u00B7 visible=${toggle.visible} \u00B7 plan=${toggle.plan}")
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Config-driven logic", style = MaterialTheme.typography.headlineMedium)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                activeConfig.features.forEach { (id, access) ->
+                    Text("$id: enabled=${access.enabled} · plan=${access.plan}", style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -69,45 +50,47 @@ fun ConfigDemoScreen(onBack: () -> Unit) {
     }
 }
 
+private fun getDemoFeature(): HarnessDemoFeature? =
+    HarnessDemoRuntimeRef.runtime?.getFeatureOrNull(FeatureId("demos")) as? HarnessDemoFeature
+
 @Composable
 fun LifecycleDemoScreen(onBack: () -> Unit) {
-    val feature = HarnessDemoFeatureModule.feature ?: return
+    val feature = getDemoFeature() ?: return
     val status by feature.status.collectAsState()
     val log by feature.log.collectAsState()
 
-    SakFeatureScreen(
-        title = "Feature lifecycle",
-        subtitle = "onActivated / onAccessChanged / onDeactivated + FeatureStatus",
-    ) {
-        SectionCard("FeatureStatus") {
-            FieldRow("state", status.state.toString())
-            FieldRow("attention", status.attention.toString())
-            FieldRow("introSeen", status.introSeen.toString())
-        }
-        SectionCard("Controls") {
-            Button(
-                onClick = { feature.setSetupComplete(status.state !is FeatureState.Ready) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (status.state is FeatureState.Ready) "Mark setup incomplete" else "Mark setup complete")
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Feature Lifecycle", style = MaterialTheme.typography.headlineMedium)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("state: ${status.state}", style = MaterialTheme.typography.bodySmall)
+                Text("attention: ${status.attention}", style = MaterialTheme.typography.bodySmall)
             }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Attention.entries.forEach { attention ->
-                    OutlinedButton(
-                        onClick = { feature.setAttention(attention) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(attention.name)
-                    }
+        }
+        Button(
+            onClick = { feature.setSetupComplete(status.state !is FeatureState.Ready) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (status.state is FeatureState.Ready) "Mark setup incomplete" else "Mark setup complete")
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Attention.entries.forEach { attention ->
+                OutlinedButton(
+                    onClick = { feature.setAttention(attention) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(attention.name)
                 }
             }
         }
-        SectionCard("Callback log") {
-            if (log.isEmpty()) {
-                Text("No callbacks yet", style = MaterialTheme.typography.bodySmall)
-            } else {
-                log.forEach { line -> Text("\u00B7 $line", style = MaterialTheme.typography.bodySmall) }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Callback log:", style = MaterialTheme.typography.titleSmall)
+                if (log.isEmpty()) {
+                    Text("No callbacks yet", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    log.forEach { line -> Text("· $line", style = MaterialTheme.typography.bodySmall) }
+                }
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -118,22 +101,12 @@ fun LifecycleDemoScreen(onBack: () -> Unit) {
 
 @Composable
 fun EntryStylesDemoScreen(onBack: () -> Unit) {
-    val feature = HarnessDemoFeatureModule.feature
-
-    SakFeatureScreen(
-        title = "Entry-point styles",
-        subtitle = "EntryStyle drives widget rendering on destinations",
-    ) {
-        InfoCard(
-            "SakEntryWidget renders each EntryStyle differently: Card, Row, Banner, " +
-                "Tile, Widget, Custom (falls back to Card).",
-        )
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Entry-point styles", style = MaterialTheme.typography.headlineMedium)
         EntryStyle.entries.forEach { style ->
-            SakEntryWidget(
-                feature = feature,
-                entry = sampleEntry("sample-${style.name.lowercase()}", style),
-                onClick = {},
-            )
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text("EntryStyle.${style.name}", modifier = Modifier.padding(16.dp))
+            }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
@@ -143,33 +116,17 @@ fun EntryStylesDemoScreen(onBack: () -> Unit) {
 
 @Composable
 fun AccessDemoScreen(onBack: () -> Unit) {
-    val feature = HarnessDemoFeatureModule.feature ?: return
+    val feature = getDemoFeature() ?: return
     val access by feature.access.collectAsState()
 
-    SakFeatureScreen(
-        title = "Feature access",
-        subtitle = "FeatureToggle from ActiveConfig",
-    ) {
-        val toggle = access ?: return@SakFeatureScreen
-        SectionCard("Plan & visibility") {
-            FieldRow("enabled", toggle.enabled.toString())
-            FieldRow("visible", toggle.visible.toString())
-            FieldRow("plan", toggle.plan)
-        }
-        SectionCard("grants") {
-            if (toggle.grants.isEmpty()) {
-                Text("none", style = MaterialTheme.typography.bodySmall)
-            } else {
-                toggle.grants.forEach { grant -> Text("\u00B7 $grant", style = MaterialTheme.typography.bodySmall) }
-            }
-        }
-        SectionCard("entries") {
-            FieldRow("allowed", toggle.entries?.allowed?.joinToString(", ") ?: "all")
-            FieldRow("blocked", toggle.entries?.blocked?.joinToString(", ") ?: "none")
-        }
-        SectionCard("attrs (opaque JSON)") {
-            toggle.attrs.forEach { (key, value) ->
-                FieldRow(key, value.toString())
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Feature Access", style = MaterialTheme.typography.headlineMedium)
+        val acc = access ?: return@Column
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("enabled: ${acc.enabled}", style = MaterialTheme.typography.bodySmall)
+                Text("plan: ${acc.plan}", style = MaterialTheme.typography.bodySmall)
+                Text("grants: ${acc.grants.joinToString()}", style = MaterialTheme.typography.bodySmall)
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -180,22 +137,16 @@ fun AccessDemoScreen(onBack: () -> Unit) {
 
 @Composable
 fun ApiDemoScreen(onBack: () -> Unit) {
-    val feature = HarnessDemoFeatureModule.feature ?: return
+    val feature = getDemoFeature() ?: return
     var result by remember { mutableStateOf("") }
 
-    SakFeatureScreen(
-        title = "Feature APIs",
-        subtitle = "cross-feature ApiLookup",
-    ) {
-        InfoCard(
-            "Licensing exposes LicenseProvider as a FeatureApi. The demos feature looks " +
-                "it up at runtime via context.apis.find(...).",
-        )
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Feature APIs", style = MaterialTheme.typography.headlineMedium)
         Button(
             onClick = {
                 val provider = feature.findLicenseProvider()
                 result = if (provider != null) {
-                    "Found LicenseProvider \u2192 ${provider::class.simpleName}"
+                    "Found LicenseProvider → ${provider::class.simpleName}"
                 } else {
                     "Not found — licensing feature not active"
                 }
@@ -204,22 +155,8 @@ fun ApiDemoScreen(onBack: () -> Unit) {
         ) {
             Text("Look up LicenseProvider")
         }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                result = feature.apiCatalog().joinToString("\n") { api ->
-                    "${api.apiType} (from ${api.featureId.value})"
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Catalog registered APIs")
-        }
         if (result.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            SectionCard("Result") {
-                Text(result, style = MaterialTheme.typography.bodySmall)
-            }
+            Text(result, style = MaterialTheme.typography.bodyMedium)
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
@@ -229,34 +166,25 @@ fun ApiDemoScreen(onBack: () -> Unit) {
 
 @Composable
 fun ServiceDemoScreen(onBack: () -> Unit) {
-    val feature = HarnessDemoFeatureModule.feature ?: return
+    val feature = getDemoFeature() ?: return
     val service = feature.logService()
-    val messages by (service?.messages?.collectAsState() ?: return)
+    val messages by (service?.messages?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
 
-    SakFeatureScreen(
-        title = "App services",
-        subtitle = "host-injected AppService",
-    ) {
-        InfoCard(
-            "The host registered InMemoryHarnessLogService via AppServiceRegistry. " +
-                "Features consume it through context.services.",
-        )
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("App Services", style = MaterialTheme.typography.headlineMedium)
         Button(
-            onClick = { service.log("log entry @ ${System.nanoTime().toString().takeLast(6)}") },
+            onClick = { service?.log("log entry") },
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Write log entry")
         }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { service.clear() }, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { service?.clear() }, modifier = Modifier.fillMaxWidth()) {
             Text("Clear log")
         }
-        Spacer(Modifier.height(8.dp))
-        SectionCard("Service messages (${messages.size})") {
-            if (messages.isEmpty()) {
-                Text("empty", style = MaterialTheme.typography.bodySmall)
-            } else {
-                messages.forEach { message -> Text("\u00B7 $message", style = MaterialTheme.typography.bodySmall) }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Log messages (${messages.size}):", style = MaterialTheme.typography.titleSmall)
+                messages.forEach { msg -> Text("· $msg", style = MaterialTheme.typography.bodySmall) }
             }
         }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
@@ -270,37 +198,22 @@ fun LicenseDemoScreen(onBack: () -> Unit) {
     val runtime = HarnessDemoRuntimeRef.runtime ?: return
     val scope = rememberCoroutineScope()
     val activeConfig by runtime.activeConfig.collectAsState()
-    val feature = HarnessDemoFeatureModule.feature
+    val feature = getDemoFeature()
 
-    SakFeatureScreen(
-        title = "License overlay",
-        subtitle = "signed config merge into ActiveConfig",
-    ) {
-        InfoCard(
-            "DefaultConfig is merged with the license overlay. Verifier = AcceptAllLicenseVerifier (dev).",
-        )
-        SectionCard("Current analytics access") {
-            FieldRow("plan", activeConfig.features["analytics"]?.plan ?: "\u2014")
-            FieldRow(
-                "grants",
-                (activeConfig.features["analytics"]?.grants ?: emptySet()).joinToString(", ").ifEmpty { "\u2014" },
-            )
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("License Overlay", style = MaterialTheme.typography.headlineMedium)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Analytics plan: ${activeConfig.features["analytics"]?.plan ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                Text("Licensing plan: ${activeConfig.features["licensing"]?.plan ?: "-"}", style = MaterialTheme.typography.bodySmall)
+            }
         }
-        SectionCard("Current licensing access") {
-            FieldRow("plan", activeConfig.features["licensing"]?.plan ?: "\u2014")
-            FieldRow(
-                "grants",
-                (activeConfig.features["licensing"]?.grants ?: emptySet()).joinToString(", ").ifEmpty { "\u2014" },
-            )
-        }
-        Spacer(Modifier.height(8.dp))
         Button(
             onClick = { scope.launch { runtime.applyDevLicenseOverlay(proAnalyticsOverlay) } },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Apply dev overlay (analytics \u2192 pro)")
+            Text("Apply dev overlay (analytics → pro)")
         }
-        Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = {
                 (feature?.findLicenseProvider() as? SampleLicenseProvider)?.unlockPro()
@@ -309,11 +222,6 @@ fun LicenseDemoScreen(onBack: () -> Unit) {
         ) {
             Text("Unlock Pro via licensing feature API")
         }
-        InfoCard(
-            "The licensing feature's Unlock Pro (licensing/upgrade) emits the same overlay. " +
-                "After a pro overlay analytics gains analytics.reports (report-row on Alerts, " +
-                "trial-tile disappears from Home) and licensing swaps unlock-banner for a pro-widget.",
-        )
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
         }
@@ -324,42 +232,25 @@ fun LicenseDemoScreen(onBack: () -> Unit) {
 fun RoutesDemoScreen(onBack: () -> Unit) {
     val runtime = HarnessDemoRuntimeRef.runtime ?: return
 
-    SakFeatureScreen(
-        title = "Routes & navigation",
-        subtitle = "one shared NavHost",
-    ) {
-        InfoCard(
-            "All feature routes live in one graph. runtime.navigate() emits " +
-                "a one-shot navigationRoute that SakApp consumes.",
-        )
-        Spacer(Modifier.height(8.dp))
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Routes & Navigation", style = MaterialTheme.typography.headlineMedium)
         Button(
             onClick = { runtime.navigate(Route("analytics/today")) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Navigate \u2192 analytics/today")
+            Text("Navigate → analytics/today")
         }
-        Spacer(Modifier.height(8.dp))
         Button(
             onClick = { runtime.navigate(Route("licensing/upgrade")) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Navigate \u2192 licensing/upgrade")
+            Text("Navigate → licensing/upgrade")
         }
-        Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
         }
     }
 }
-
-private fun sampleEntry(id: String, style: EntryStyle) = EntryPoint(
-    id = EntryPointId(id),
-    type = "demo",
-    style = style,
-    action = EntryAction.None,
-    priority = 0,
-)
 
 private val proAnalyticsOverlay =
     """

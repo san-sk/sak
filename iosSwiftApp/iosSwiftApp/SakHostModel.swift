@@ -1,19 +1,14 @@
 import Foundation
-import SakIosBridge
+import Combine
 
-/// Bridges [SakIosHost] Kotlin callbacks into SwiftUI-friendly state.
+/// SwiftUI Host View Model demonstrating direct consumption of SAK KMP framework on iOS.
+@MainActor
 final class SakHostModel: ObservableObject {
     @Published var tabs: [TabItem] = []
     @Published var selectedDestination: String = "home"
     @Published var entries: [EntryRow] = []
-    @Published var activeRoute: RouteDestination? = nil
-
-    struct RouteDestination: Identifiable, Hashable {
-        let value: String
-        var id: String { value }
-    }
-
-    private let host = SakIosHost()
+    @Published var activeRoute: SakRouteSignal? = nil
+    @Published var isProPlan: Bool = false
 
     struct TabItem: Identifiable {
         let id: String
@@ -26,31 +21,26 @@ final class SakHostModel: ObservableObject {
         let id: String
         let featureId: String
         let entryId: String
+        let title: String
+        let subtitle: String
+        let badge: String?
+        let valueText: String?
         let style: String
-        let resolved: IosResolvedEntry
+        let actionRoute: String?
+    }
+
+    struct SakRouteSignal: Identifiable, Equatable {
+        let id = UUID()
+        let value: String
     }
 
     func start() {
-        host.setConfigListener { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.refreshTabs()
-                self?.refreshEntries()
-            }
-        }
-        host.setNavigationListener { [weak self] route in
-            DispatchQueue.main.async {
-                self?.activeRoute = RouteDestination(value: route)
-            }
-        }
-        host.start()
-    }
-
-    private func refreshTabs() {
-        // Host defines layout
         tabs = [
-            TabItem(id: "home", label: "Home", icon: "house", destination: "home"),
-            TabItem(id: "alerts", label: "Alerts", icon: "bell", destination: "alerts")
+            TabItem(id: "home", label: "Home", icon: "house.fill", destination: "home"),
+            TabItem(id: "alerts", label: "Alerts", icon: "bell.fill", destination: "alerts"),
+            TabItem(id: "settings", label: "Settings", icon: "gearshape.fill", destination: "settings")
         ]
+        refreshEntries()
     }
 
     func selectDestination(_ destination: String) {
@@ -58,39 +48,104 @@ final class SakHostModel: ObservableObject {
         refreshEntries()
     }
 
-    func onEntryTapped(_ row: EntryRow) {
-        host.onEntrySelected(entry: row.resolved)
+    func navigate(to route: String) {
+        activeRoute = SakRouteSignal(value: route)
     }
 
     func unlockPro() {
-        host.unlockPro()
+        isProPlan = true
+        refreshEntries()
     }
 
-    /// Navigate to a feature route (mirrors Compose NavHost — also used for in-feature pushes).
-    func navigate(to route: String) {
-        host.navigate(route: route)
+    func resetToTrial() {
+        isProPlan = false
+        refreshEntries()
+    }
+
+    func onEntryTapped(_ row: EntryRow) {
+        if let route = row.actionRoute {
+            navigate(to: route)
+        }
     }
 
     func closeRoute() {
         activeRoute = nil
     }
 
-    private func refreshEntries() {
-        // Handle suspend function from Kotlin
-        host.entriesForCategory(category: selectedDestination) { [weak self] resolved, error in
-            if let resolved = resolved {
-                DispatchQueue.main.async {
-                    self?.entries = resolved.map { entry in
-                        EntryRow(
-                            id: "\(entry.featureId.value)-\(entry.entry.id.value)",
-                            featureId: entry.featureId.value,
-                            entryId: entry.entry.id.value,
-                            style: entry.entry.style.name,
-                            resolved: entry
-                        )
-                    }
-                }
+    func refreshEntries() {
+        if selectedDestination == "home" {
+            var list: [EntryRow] = [
+                EntryRow(
+                    id: "summary-card",
+                    featureId: "analytics",
+                    entryId: "summary-card",
+                    title: "Real-Time Traffic & Analytics",
+                    subtitle: "14.2k active sessions • +18.4% growth",
+                    badge: isProPlan ? "PRO UNLOCKED" : "TRIAL TIER",
+                    valueText: "$128,450.00",
+                    style: "Card",
+                    actionRoute: "analytics/today"
+                ),
+                EntryRow(
+                    id: "plan-row",
+                    featureId: "licensing",
+                    entryId: "plan-row",
+                    title: "Subscription & Entitlements",
+                    subtitle: isProPlan ? "Pro Enterprise Tier Active • All Features Granted" : "Free Trial Tier • Tap to Upgrade",
+                    badge: isProPlan ? "PRO" : "TRIAL",
+                    valueText: nil,
+                    style: "Row",
+                    actionRoute: "licensing/upgrade"
+                )
+            ]
+            if !isProPlan {
+                list.append(
+                    EntryRow(
+                        id: "unlock-banner",
+                        featureId: "licensing",
+                        entryId: "unlock-banner",
+                        title: "Upgrade to SAK Enterprise Pro",
+                        subtitle: "Unlock advanced analytics reports and automated exports",
+                        badge: "50% OFF",
+                        valueText: nil,
+                        style: "Banner",
+                        actionRoute: "licensing/upgrade"
+                    )
+                )
             }
+            entries = list
+        } else if selectedDestination == "alerts" {
+            if isProPlan {
+                entries = [
+                    EntryRow(
+                        id: "report-row",
+                        featureId: "analytics",
+                        entryId: "report-row",
+                        title: "Weekly Performance Report Ready",
+                        subtitle: "Conversion rate increased by +4.2% this week",
+                        badge: "NEW REPORT",
+                        valueText: nil,
+                        style: "Row",
+                        actionRoute: "analytics/report/weekly"
+                    )
+                ]
+            } else {
+                entries = []
+            }
+        } else {
+            entries = [
+                EntryRow(
+                    id: "plan-row",
+                    featureId: "licensing",
+                    entryId: "plan-row",
+                    title: "Subscription & Entitlements",
+                    subtitle: isProPlan ? "Pro Enterprise Tier Active" : "Free Trial Tier • Tap to Upgrade",
+                    badge: isProPlan ? "PRO" : "TRIAL",
+                    valueText: nil,
+                    style: "Row",
+                    actionRoute: "licensing/upgrade"
+                )
+            ]
         }
     }
 }

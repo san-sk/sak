@@ -1,60 +1,67 @@
 package sak.sdk.feature
 
+import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.flow.StateFlow
-import sak.sdk.api.FeatureApi
+import sak.sdk.config.FeatureAccess
 import sak.sdk.entry.EntryPoint
-import sak.sdk.navigation.NavigationContract
 import sak.sdk.navigation.Route
+import sak.sdk.service.FeatureService
 
 /**
- * A pluggable business capability (analytics, licensing, messaging, …).
+ * Core contract for a pluggable business capability in SAK.
  *
- * Lifecycle is owned by [sak.runtime.FeatureLifecycle], not the Android Activity.
- * The host activates features based on config; features publish widgets and routes reactively.
+ * Implements [LifecycleOwner]. Bound to host platform lifecycle (e.g. Android ComponentActivity/Compose
+ * or SwiftUI scene phase).
+ *
+ * Features can be implemented directly on any class (`class AnalyticsFeature : Feature`).
  */
-interface Feature {
-    /** Stable id — must match the key in config `features` and [FeatureModule.id]. */
+interface Feature : LifecycleOwner {
+    /**
+     * Stable, unique identifier for this feature module (e.g. `FeatureId("analytics")`).
+     * Must match the key in [sak.sdk.config.SakConfig.features].
+     */
     val id: FeatureId
 
     /**
-     * Runtime-visible health and readiness (setup done, needs attention, intro state).
-     * Update this as async initialization completes.
+     * Observable health and readiness status of this feature.
+     * Emits state transitions (e.g. `Initializing`, `Ready`, `Error`).
      */
     val status: StateFlow<FeatureStatus>
 
     /**
-     * Widgets shown on scaffold destinations (Home, Alerts, …).
-     * Publish in [onActivated] / [onAccessChanged]; clear in [onDeactivated].
+     * Observable list of UI entry points (cards, banners, rows) published by this feature to fill host slots.
      */
     val entryPoints: StateFlow<List<EntryPoint>>
 
-    /** Internal screens this feature owns (e.g. `analytics/today`). */
-    val routes: List<Route>
-
-    /** Optional navigation contract for typed access to this feature's screens. */
-    val navContract: NavigationContract? get() = null
-
-    /** Optional APIs other features or the host can look up (e.g. [sak.sdk.license.LicenseProvider]). */
-    fun apis(): Set<FeatureApi<*>> = emptySet()
+    /**
+     * Internal navigation destinations owned by this feature (e.g. `Route("analytics/today")`).
+     */
+    val routes: List<Route> get() = emptyList()
 
     /**
-     * Initial setup when the runtime starts. Called once per app session.
-     * Heavy initialization (DB, long-lived connections) should start here.
+     * Services or APIs exported by this feature for consumption by other features or the host app.
      */
-    suspend fun onCreate(context: FeatureContext)
+    fun services(): Set<FeatureService<*>> = emptySet()
 
     /**
-     * Runtime is shutting down or feature is being permanently removed.
-     * Release all long-lived resources.
+     * Called when the feature is instantiated and initialized.
+     * Perform heavy initialization (DB setup, long-lived connections) here.
+     *
+     * @param context Runtime handle providing access to services, configuration, and coroutine scopes.
      */
-    suspend fun onDestroy()
+    suspend fun onCreate(context: FeatureContext) {}
 
-    /** Feature became enabled in ActiveConfig — register screens, publish entry points. */
-    suspend fun onActivated(context: FeatureContext)
+    /**
+     * Called when the feature's configuration or licensing entitlements update.
+     * Use this hook to reactively re-evaluate published entry points or internal capabilities.
+     *
+     * @param access Updated entitlement snapshot containing plans, capability grants, and attributes.
+     */
+    suspend fun onConfigChanged(access: FeatureAccess) {}
 
-    /** Feature disabled in ActiveConfig — clear flows and stop UI updates. */
-    suspend fun onDeactivated()
-
-    /** Plan, grants, or entries changed (usually after a license update). */
-    suspend fun onAccessChanged(context: FeatureContext) {}
+    /**
+     * Called when the feature is deactivated or runtime shuts down.
+     * Release all long-lived resources, clear flows, and cancel tasks.
+     */
+    suspend fun onDestroy() {}
 }

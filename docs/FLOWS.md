@@ -1,109 +1,99 @@
-# SAK Dynamic Flows
+# SAK Dynamic Flows & Sequence Diagrams
 
-This document details the reactive behaviors of the SAK framework using sequence diagrams.
+This document details the reactive behaviors and lifecycle flows of the SAK framework.
 
 ---
 
 ## 1. System Boot Sequence
-This flow shows how the host initializes the SAK runtime and how features are created and activated.
+
+Shows how the host application initializes `SakRuntime`, binds platform lifecycle, and initializes features.
 
 ```mermaid
 sequenceDiagram
-    participant Host as Host App
+    participant Host as Host App Shell
     participant Launcher as SakLauncher
     participant Runtime as SakRuntime
     participant Lifecycle as FeatureLifecycle
     participant Feature as Feature Module
 
-    Host->>Launcher: launch(DefaultConfig, Modules)
-    Launcher->>Runtime: create(DefaultConfig)
-    Runtime->>Lifecycle: apply(DefaultConfig)
+    Host->>Launcher: launch(defaultConfig, featureRegistry, hostLifecycle)
+    Launcher->>Runtime: SakRuntime(config, registry, hostLifecycle)
+    Runtime->>Lifecycle: apply(SakConfig)
     
     rect rgb(240, 240, 240)
-    Note over Lifecycle, Feature: Startup Features
+    Note over Lifecycle, Feature: Active Features
     Lifecycle->>Feature: onCreate(context)
-    Lifecycle->>Feature: onActivated(access)
-    Feature-->>Runtime: publish entryPoints
+    Feature-->>Runtime: publish entryPoints flow
     end
 
     Runtime-->>Host: return runtime instance
-    Host->>Host: render placeholders
+    Host->>Host: render slots with native Compose / SwiftUI
 ```
 
 ---
 
-## 2. Reactive License Update
-Shows what happens when a user upgrades their license while the app is running.
+## 2. Reactive License Overlay Update
+
+Shows what happens when a user upgrades their license tier or unlocks new entitlements at runtime.
 
 ```mermaid
 sequenceDiagram
-    participant Provider as LicenseProvider
+    participant License as LicenseProvider
     participant Runtime as SakRuntime
     participant Lifecycle as FeatureLifecycle
     participant Feature as Feature Module
     participant Host as Host UI
 
-    Provider->>Runtime: emit(NewLicensePayload)
-    Runtime->>Runtime: merge(Default, NewLicense)
-    Runtime->>Lifecycle: apply(ActiveConfig)
+    License->>Runtime: emit(SignedLicensePayload)
+    Runtime->>Runtime: mergeLicenseOverlay(baseConfig, overlay)
+    Runtime->>Lifecycle: apply(mergedConfig)
 
     alt Feature Newly Enabled
         Lifecycle->>Feature: onCreate(context)
-        Lifecycle->>Feature: onActivated(access)
-    else Entitlements Changed
-        Lifecycle->>Feature: onAccessChanged(access)
+    else Entitlements / Grants Changed
+        Lifecycle->>Feature: onConfigChanged(access)
     end
 
     Feature-->>Runtime: update entryPoints flow
-    Runtime-->>Host: update activeConfig flow
-    Host->>Host: Re-render placeholders
+    Runtime-->>Host: activeConfig flow updates
+    Host->>Host: Re-render UI slots reactively
 ```
 
 ---
 
 ## 3. Just-In-Time Lazy Loading
-Shows the flow when a feature marked as `LoadingPriority.Lazy` is accessed for the first time.
+
+Shows the flow when a lazy feature is accessed for the first time by slot category query or service lookup.
 
 ```mermaid
 sequenceDiagram
     participant Host as Host UI
-    participant Placeholder as SakFeaturePlaceHolder
     participant Runtime as SakRuntime
     participant Lifecycle as FeatureLifecycle
     participant Feature as Feature Module
 
-    Host->>Placeholder: render(category="home")
-    Placeholder->>Runtime: getFeature(lazyId)
-    
-    Runtime->>Lifecycle: getOrInstantiate(lazyId)
+    Host->>Runtime: getFeature(featureId)
+    Runtime->>Lifecycle: getOrInstantiate(featureId)
     Lifecycle->>Feature: onCreate(context)
-    Lifecycle->>Feature: onActivated(access)
-    
     Lifecycle-->>Runtime: Feature instance
-    Runtime-->>Placeholder: Feature instance
-    
-    Placeholder->>Feature: render EntryPointView()
-    Feature-->>Host: Composable / View
+    Runtime-->>Host: Feature instance
 ```
 
 ---
 
 ## 4. Error Isolation (Sandbox)
-Shows how a failure in one feature is isolated to prevent a global crash.
+
+Shows how failures in a single feature are isolated using `SupervisorJob`.
 
 ```mermaid
 sequenceDiagram
     participant Lifecycle as FeatureLifecycle
     participant BuggyFeature as Buggy Feature
-    participant Runtime as SakRuntime
     participant Host as Host UI
 
-    Lifecycle->>BuggyFeature: onCreate()
-    Note right of BuggyFeature: 💥 Throws Exception
+    Lifecycle->>BuggyFeature: onCreate(context)
+    Note right of BuggyFeature: 💥 Exception Thrown
     Lifecycle->>Lifecycle: Catch exception (SupervisorJob)
-    Lifecycle->>BuggyFeature: Update status to Error
-    
-    Runtime-->>Host: status flow emits ERROR
-    Host->>Host: SakEntryWidget renders Error UI
-    Note over Host: Rest of the app remains functional
+    Lifecycle->>BuggyFeature: Status updated to FeatureState.Error
+    Host->>Host: Host UI handles error state gracefully
 ```

@@ -31,11 +31,9 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":sak-sdk"))
-            implementation(project(":sak-compose-ui"))
             implementation(project(":sak-runtime"))
             implementation(project(":sample-analytics"))
             implementation(project(":sample-licensing"))
-            implementation(project(":sak-library-debug"))
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.androidx.navigation.compose.multiplatform)
@@ -58,6 +56,19 @@ android {
         targetSdk = libs.versions.android.compileSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+    }
+    signingConfigs {
+        getByName("debug").apply {
+            storeFile = file(".android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
     sourceSets["main"].resources.srcDir("src/commonMain/resources")
     buildFeatures {

@@ -1,12 +1,12 @@
 package sak.harness
 
-import sak.sdk.config.AppConfig
+import sak.sdk.config.SakConfig
 import sak.sdk.config.SakJson
 
-/** Parse harness JSON into [AppConfig]. */
-fun decodeHarnessConfig(json: String): AppConfig =
-    SakJson.decodeFromString(AppConfig.serializer(), json)
+/** Parse harness JSON into [SakConfig]. */
+fun decodeHarnessConfig(json: String): SakConfig =
+    SakJson.decodeFromString(SakConfig.serializer(), json)
 
-/** Embedded demo config (all platforms — no asset loading required). */
-fun loadHarnessConfig(): AppConfig =
+/** Embedded demo config. */
+fun loadHarnessConfig(): SakConfig =
     decodeHarnessConfig(harnessDefaultConfigJson)

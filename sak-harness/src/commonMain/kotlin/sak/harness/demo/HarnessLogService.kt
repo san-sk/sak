@@ -3,14 +3,8 @@ package sak.harness.demo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import sak.sdk.service.AppService
-import kotlin.reflect.KClass
-
-/** Host-injected demo service — demonstrates [sak.sdk.service.AppService] wiring. */
-interface HarnessLogService : AppService<HarnessLogService> {
-    override val type: KClass<HarnessLogService>
-        get() = HarnessLogService::class
-
+/** Host-injected demo service. */
+interface HarnessLogService {
     val messages: StateFlow<List<String>>
     fun log(message: String)
     fun clear()
