@@ -14,8 +14,18 @@ kotlin {
             }
         }
     }
-    iosArm64()
-    iosSimulatorArm64()
+    iosArm64 {
+        binaries.framework {
+            baseName = "SakIosBridge"
+            isStatic = true
+        }
+    }
+    iosSimulatorArm64 {
+        binaries.framework {
+            baseName = "SakIosBridge"
+            isStatic = true
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {

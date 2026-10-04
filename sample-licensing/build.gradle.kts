@@ -1,42 +1,37 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.compose.multiplatform)
+    kotlin("multiplatform")
+    id("com.android.library")
+    id("org.jetbrains.compose")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 kotlin {
     androidTarget {
-        compilations.all {
-            compileTaskProvider.configure {
-                compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
-            }
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
         }
     }
+    iosX64()
     iosArm64()
     iosSimulatorArm64()
 
     sourceSets {
         commonMain.dependencies {
             implementation(project(":sak-sdk"))
-            implementation(libs.kotlinx.coroutines.core)
-            implementation(libs.kotlinx.serialization.json)
-            implementation(libs.androidx.navigation.compose.multiplatform)
+            implementation(project(":sak-runtime"))
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
-            implementation(compose.ui)
+            implementation("org.jetbrains.androidx.navigation:navigation-compose:2.7.0-alpha07")
+            implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
         }
     }
 }
 
 android {
     namespace = "sak.sample.licensing"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
+    compileSdk = 34
     defaultConfig {
-        minSdk = libs.versions.android.minSdk.get().toInt()
+        minSdk = 24
     }
 }

@@ -1,80 +1,90 @@
 package sak.sdk.feature
 
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.Flow
 import sak.sdk.config.FeatureAccess
 import sak.sdk.entry.EntryPoint
 
 /**
- * Optional base implementation of [Feature] that handles common boilerplate.
+ * An abstract base class for implementing [Feature]s that eliminates structural boilerplate.
+ *
+ * Developers should inherit from `BaseFeature` rather than implementing `Feature` directly.
+ * It automatically manages the internal `LifecycleRegistry`, provides backing fields for the 
+ * observable flows (`status`, `entryPoints`), and provides convenient setter methods.
  */
 abstract class BaseFeature : Feature {
 
-    private var _context: FeatureContext? = null
+    private var internalContext: FeatureContext? = null
 
     /**
-     * The current feature context. Available after [onCreate].
+     * The mutable lifecycle registry specific to this feature module.
+     * The SAK `FeatureManager` pushes Host OS events (like ON_PAUSE and ON_STOP) directly 
+     * into this registry, ensuring the feature naturally syncs with the user's device state.
+     */
+    val registry = LifecycleRegistry.createUnsafe(this)
+
+    /**
+     * The active runtime context provided during [onCreate].
+     * @throws IllegalStateException If accessed before [onCreate] completes or after [onDestroy] executes.
      */
     val featureContext: FeatureContext
-        get() = _context ?: error("Feature $id: context requested before onCreate or after onDestroy")
+        get() = internalContext ?: error("Feature ${id.value}: context requested before onCreate or after onDestroy")
 
+    /** Convenient internal shorthand accessor for [featureContext]. */
     protected val context: FeatureContext
         get() = featureContext
 
-    protected val _status = MutableStateFlow(FeatureStatus())
-    override val status: StateFlow<FeatureStatus> = _status.asStateFlow()
+    private val mutableStatus = MutableStateFlow(FeatureStatus())
+    override val status: StateFlow<FeatureStatus> = mutableStatus.asStateFlow()
 
-    protected val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
-    override val entryPoints: StateFlow<List<EntryPoint>> = _entryPoints.asStateFlow()
+    private val mutableEntryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
+    override val entryPoints: StateFlow<List<EntryPoint>> = mutableEntryPoints.asStateFlow()
 
     override val lifecycle: Lifecycle
-        get() = context.lifecycle
+        get() = registry
 
     /**
-     * Managed scope for this feature.
+     * The CoroutineScope bound to this feature's lifecycle, automatically provided by the [context].
      */
     val featureScope: CoroutineScope
         get() = context.coroutineScope
 
     override suspend fun onCreate(context: FeatureContext) {
-        this._context = context
+        this.internalContext = context
     }
 
     override suspend fun onConfigChanged(access: FeatureAccess) {}
 
     override suspend fun onDestroy() {
-        _entryPoints.value = emptyList()
-        this._context = null
+        mutableEntryPoints.value = emptyList()
+        this.internalContext = null
     }
 
-    /** Helper to check if a grant is present in the current context. */
-    protected fun hasGrant(grant: String): Boolean = context.hasGrant(grant)
-
-    /** Helper to observe transitions of a grant status. */
-    protected fun observeGrant(grant: String): Flow<Boolean> = context.observeGrant(grant)
-
     /**
-     * Update the feature state (Ready, Initializing, Error).
+     * Transitions the feature's health state.
+     * @param state E.g., [FeatureState.Ready] or [FeatureState.Error].
      */
     protected fun updateStatus(state: FeatureState) {
-        _status.value = _status.value.copy(state = state)
+        mutableStatus.value = mutableStatus.value.copy(state = state)
     }
 
     /**
-     * Update the attention level (None, Info, Warning, Critical).
+     * Elevates or lowers the feature's urgency request.
+     * @param attention E.g., [Attention.Medium] to request a notification badge from the host UI.
      */
     protected fun updateAttention(attention: Attention) {
-        _status.value = _status.value.copy(attention = attention)
+        mutableStatus.value = mutableStatus.value.copy(attention = attention)
     }
 
     /**
-     * Update the list of published entry points.
+     * Pushes a new list of `EntryPoint` UI descriptors to the Host App.
+     * @param list The widgets the host app should render. Replaces the previously emitted list entirely.
      */
     protected fun setEntryPoints(list: List<EntryPoint>) {
-        _entryPoints.value = list
+        mutableEntryPoints.value = list
     }
 }

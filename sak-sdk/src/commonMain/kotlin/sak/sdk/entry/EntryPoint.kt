@@ -3,47 +3,35 @@ package sak.sdk.entry
 import kotlinx.serialization.json.JsonElement
 
 /**
- * Stable unique identifier for an entry point widget (e.g. `EntryPointId("summary-card")`).
- */
-data class EntryPointId(val value: String)
-
-/**
- * Standard classification types for published entry point widgets.
- */
-enum class EntryPointType {
-    /** Urgent alert or notification widget. */
-    Alert,
-    /** Informational card or status banner. */
-    Info,
-    /** Main dashboard tile or summary widget. */
-    Dashboard,
-    /** Settings or configuration option item. */
-    Settings,
-    /** Interactive action button or CTA card. */
-    Action,
-    /** Feature summary tile. */
-    Summary,
-    /** Host-defined or custom type. */
-    Custom,
-}
-
-/**
- * Runtime entry point published by a feature module to fill host application UI slots.
+ * A Micro-Frontend Data Descriptor published by a feature module to expose UI capabilities.
  *
- * @param id Stable identifier for this entry point.
- * @param type Entry point classification type ([EntryPointType.Alert], [EntryPointType.Info], [EntryPointType.Dashboard], [EntryPointType.Settings]). Defaults to [EntryPointType.Info].
- * @param style Optional visual layout hint ([EntryStyle]). Defaults to `null`.
- * @param action Action executed when user interacts with this entry point. Defaults to [EntryAction.None].
- * @param metadata Custom JSON metadata payload.
- * @param priority Relative sorting priority (higher priority items sort first within host slots).
- * @param categories Host slot categories where this entry point should appear (e.g. `setOf("home", "alerts")`).
+ * In the SAK architecture, feature modules do **not** render host views (Compose/SwiftUI) directly,
+ * ensuring strict KMP boundaries. Instead, features publish `EntryPoint` data structures.
+ * 
+ * The Host Shell constantly observes the aggregated flow of `EntryPoint`s from all active features.
+ * When it receives these descriptors, the Host dynamically draws Native UI components (Cards, Banners)
+ * matching the provided text, icons, and badges.
+ *
+ * @param id Stable, zero-allocation unique identifier for this entry point.
+ * @param type Semantic classification hint telling the Host *where* to put it ([EntryPointType.Dashboard], [EntryPointType.Settings], etc.).
+ * @param style Visual layout hint telling the Host *how* it should look ([EntryStyle.Card], [EntryStyle.Row], etc.).
+ * @param priority Relative sorting priority. Higher numbers are sorted to the top of the UI list.
+ * @param action The behavior dispatched to `SakRuntime` when the user taps this widget natively ([EntryAction.Navigate], etc.).
+ * @param title Primary title label.
+ * @param subtitle Secondary or supporting description text.
+ * @param icon Icon key identifier (e.g., "chat_bubble", "settings"). The Host maps this string to native Vector Drawables or SF Symbols.
+ * @param badge Optional badge indicator string (e.g., "NEW", "LIVE", "3").
+ * @param metadata An arbitrary JSON payload. Used to pass complex data (like line-graph data points) to Custom Host renderers.
  */
 data class EntryPoint(
     val id: EntryPointId,
-    val type: EntryPointType = EntryPointType.Info,
+    val type: EntryPointType = EntryPointType.Card,
     val style: EntryStyle? = null,
-    val action: EntryAction = EntryAction.None,
-    val metadata: Map<String, JsonElement> = emptyMap(),
     val priority: Int = 0,
-    val categories: Set<String> = emptySet(),
+    val action: EntryAction = EntryAction.None,
+    val title: String = "",
+    val subtitle: String? = null,
+    val icon: String? = null,
+    val badge: String? = null,
+    val metadata: Map<String, JsonElement> = emptyMap(),
 )

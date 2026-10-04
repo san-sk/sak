@@ -2,88 +2,47 @@ package sak.sdk.feature
 
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.Flow
-import kotlinx.serialization.json.decodeFromJsonElement
 import sak.sdk.config.FeatureAccess
-import sak.sdk.config.SakJson
 import sak.sdk.navigation.Route
 import sak.sdk.service.ServiceLookup
 
 /**
- * Runtime environment handle provided to an active feature module during initialization.
+ * The runtime environment sandbox injected into an active feature during [Feature.onCreate].
  *
- * Grants access to feature entitlements, cross-feature service lookups, navigation triggers,
- * managed coroutine scopes, and platform lifecycle binding.
+ * The `FeatureContext` provides the feature module with safely scoped tools required to execute its logic.
+ * By injecting these tools, the feature remains decoupled from the `SakRuntime` engine and the Host OS.
  */
 interface FeatureContext {
-    /**
-     * Current feature access entitlement snapshot from [sak.sdk.config.SakConfig].
+    /** 
+     * The current remote configuration snapshot for this specific feature.
+     * Contains the enablement status and custom JSON parameters (e.g., sampling rates, theme overrides).
      */
     val access: FeatureAccess
 
     /**
-     * Checks if the specified capability grant string is present in current [access].
-     *
-     * @param grant Capability token string (e.g. `"analytics.reports"`).
-     * @return `true` if granted, `false` otherwise.
-     */
-    fun hasGrant(grant: String): Boolean
-
-    /**
-     * Observes real-time grant transitions when license overlays are applied.
-     *
-     * @param grant Capability token string to observe.
-     * @return [Flow] emitting `true`/`false` whenever grant status transitions.
-     */
-    fun observeGrant(grant: String): Flow<Boolean>
-
-    /**
-     * Emits a navigation request signal to the host application shell.
-     *
-     * @param route Target destination route (e.g. `Route("analytics/today")`).
-     */
-    fun navigate(route: Route)
-
-    /**
-     * Container for looking up host-provided services and feature-exported APIs.
+     * The Service Locator registry.
+     * Features use this to look up public APIs exported by other sibling features or the Host OS,
+     * ensuring zero compile-time coupling between plugin modules.
      */
     val services: ServiceLookup
 
     /**
-     * Managed coroutine scope bound to this feature's lifecycle.
-     * Automatically cancelled when the feature is deactivated or destroyed.
+     * A managed CoroutineScope bound strictly to this feature's lifecycle.
+     * When the feature is destroyed (due to config changes or app exit), all jobs launched
+     * in this scope are automatically and instantly cancelled.
      */
     val coroutineScope: CoroutineScope
 
     /**
-     * Platform [Lifecycle] reference synced with host container (Activity or SwiftUI scene phase).
+     * The platform [Lifecycle] registry synchronized with the Host container (Android Activity or SwiftUI Scene).
+     * Features should use this to pause background work (like WebSockets) when the Host OS goes to the background.
      */
     val lifecycle: Lifecycle
-}
 
-/**
- * Parses an opaque JSON attribute from feature configuration into a typed object.
- *
- * @param key Attribute key in [FeatureAccess.attrs].
- * @return Parsed object of type [T], or `null` if key is missing or malformed.
- */
-inline fun <reified T> FeatureContext.typedAttr(key: String): T? {
-    val element = access.attrs[key] ?: return null
-    return try {
-        SakJson.decodeFromJsonElement<T>(element)
-    } catch (e: Exception) {
-        null
-    }
-}
-
-/**
- * Parses an opaque JSON attribute from feature configuration or throws an error if missing.
- *
- * @param key Attribute key in [FeatureAccess.attrs].
- * @return Parsed object of type [T].
- * @throws IllegalStateException if attribute is missing.
- */
-inline fun <reified T> FeatureContext.requireAttr(key: String): T {
-    val element = access.attrs[key] ?: error("Attribute '$key' missing for feature")
-    return SakJson.decodeFromJsonElement<T>(element)
+    /**
+     * Emits a navigation request over the exact-once Event Channel to the host application shell.
+     *
+     * @param route Target destination route (e.g. `Route("analytics/today")`).
+     */
+    fun navigate(route: Route)
 }

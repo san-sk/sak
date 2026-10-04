@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,18 +17,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
-import sak.sdk.config.FeatureAccess
+import kotlinx.coroutines.launch
+import sak.runtime.SakRuntime
+import sak.sdk.feature.FeatureId
 
 fun NavGraphBuilder.licensingNavigation(
-    access: FeatureAccess?,
-    licenseProvider: SampleLicenseProvider,
+    runtime: SakRuntime,
+    allFeatureIds: Set<String>,
     onBack: () -> Unit,
 ) {
     composable("licensing/upgrade") {
-        LicensingUpgradeScreen(
-            access = access,
-            onUnlock = { licenseProvider.unlockPro() },
-            onReset = { licenseProvider.resetToTrial() },
+        FeatureControlsScreen(
+            runtime = runtime,
+            allFeatureIds = allFeatureIds,
             onBack = onBack,
         )
     }
@@ -32,23 +37,27 @@ fun NavGraphBuilder.licensingNavigation(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LicensingUpgradeScreen(
-    access: FeatureAccess?,
-    onUnlock: () -> Unit,
-    onReset: () -> Unit,
+fun FeatureControlsScreen(
+    runtime: SakRuntime,
+    allFeatureIds: Set<String>,
     onBack: () -> Unit,
 ) {
-    val pro = access?.plan == "pro"
+    val activeConfig by runtime.activeConfig.collectAsState()
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("License & Entitlements Hub") },
+                title = { Text("Plugin Store") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Text("←")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         }
     ) { padding ->
@@ -60,105 +69,82 @@ fun LicensingUpgradeScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Active Tier Card
+            // Header Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (pro) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                )
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Current Plan Tier", style = MaterialTheme.typography.labelMedium)
-                            Text(
-                                text = if (pro) "PRO ENTERPRISE TIER" else "STANDARD TRIAL TIER",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Surface(
-                            color = if (pro) Color(0xFF4CAF50) else MaterialTheme.colorScheme.tertiary,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = if (pro) "ACTIVE" else "TRIAL",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Module Configuration", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        text = if (pro)
-                            "Full access to advanced analytics reports, custom micro-frontend widgets, and priority API grants."
-                        else
-                            "Limited trial access. Upgrade to Pro to unlock advanced reporting and export features.",
-                        style = MaterialTheme.typography.bodySmall
+                        "Manage your active plugins. Toggling a module instantly triggers the SAK engine to mount or destroy the feature concurrently, without restarting the app.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
                 }
             }
 
-            // Feature Grants Checklist
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Granted Capabilities", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    
-                    GrantRow(title = "Basic Dashboard Analytics", granted = true)
-                    GrantRow(title = "Pro Analytics Reports (`analytics.reports`)", granted = pro)
-                    GrantRow(title = "Enterprise Licensing API (`licensing.pro`)", granted = pro)
-                    GrantRow(title = "Live Signed License Overlay Updates", granted = true)
-                }
-            }
+            Text("Installed Modules", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
 
-            // Interactive Dev Controls
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Interactive Entitlement Control", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Simulate live remote license overlay emissions from server.", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(12.dp))
-                    
-                    if (pro) {
-                        OutlinedButton(
-                            onClick = onReset,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Downgrade / Reset to Trial Overlay")
+            // Feature Switches
+            allFeatureIds.sorted().forEach { featureId ->
+                val isEnabled = activeConfig.isFeatureEnabled(featureId)
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isEnabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = featureId.replaceFirstChar { it.uppercase() }, 
+                                    style = MaterialTheme.typography.titleMedium, 
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (isEnabled) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = if (isEnabled) "Active and consuming resources" else "Destroyed to save memory",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isEnabled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    } else {
-                        Button(
-                            onClick = onUnlock,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Simulate Pro Upgrade (Emit Pro License Overlay)")
-                        }
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { checked -> 
+                                scope.launch {
+                                    runtime.setFeatureEnabled(featureId, checked) 
+                                }
+                            },
+                        )
                     }
                 }
             }
 
-            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-                Text("Back to Main Shell")
+            Spacer(Modifier.height(24.dp))
+            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Text("Back to Dashboard")
             }
         }
-    }
-}
-
-@Composable
-private fun GrantRow(title: String, granted: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(title, style = MaterialTheme.typography.bodySmall)
-        Text(
-            text = if (granted) "✓ Granted" else "✗ Locked",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = if (granted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-        )
     }
 }

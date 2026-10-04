@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Maps SAK route strings to native SwiftUI screens (sample features).
+/// Maps SAK route strings to native SwiftUI screens.
+///
+/// Route strings come from feature entry point actions; the host decides how to
+/// present them.
 enum SakParsedRoute: Equatable {
     case analyticsToday
     case analyticsReport(reportId: String)
-    case licensingUpgrade
+    case featureControls
     case unknown(String)
 
     init(_ route: String) {
@@ -12,7 +15,7 @@ enum SakParsedRoute: Equatable {
         case "analytics/today":
             self = .analyticsToday
         case "licensing/upgrade":
-            self = .licensingUpgrade
+            self = .featureControls
         default:
             let reportPrefix = "analytics/report/"
             if route.hasPrefix(reportPrefix) {
@@ -30,8 +33,8 @@ enum SakParsedRoute: Equatable {
             return "Real-Time Analytics"
         case .analyticsReport(let reportId):
             return "Report: \(reportId)"
-        case .licensingUpgrade:
-            return "License & Entitlements Hub"
+        case .featureControls:
+            return "Feature Controls"
         case .unknown(let route):
             return route
         }
@@ -49,7 +52,6 @@ struct FeatureRouteView: View {
             switch parsed {
             case .analyticsToday:
                 AnalyticsTodayView(
-                    model: model,
                     onOpenReport: { reportId in
                         model.navigate(to: "analytics/report/\(reportId)")
                     },
@@ -60,13 +62,8 @@ struct FeatureRouteView: View {
                     reportId: reportId,
                     onBack: { model.navigate(to: "analytics/today") }
                 )
-            case .licensingUpgrade:
-                LicensingUpgradeView(
-                    model: model,
-                    onUnlock: { model.unlockPro() },
-                    onReset: { model.resetToTrial() },
-                    onBack: { model.closeRoute() }
-                )
+            case .featureControls:
+                FeatureControlsView(model: model, onBack: { model.closeRoute() })
             case .unknown(let route):
                 UnknownRouteView(route: route)
             }
@@ -76,17 +73,15 @@ struct FeatureRouteView: View {
     }
 }
 
-// MARK: - Analytics (mirrors sample-analytics Compose screens)
+// MARK: - Analytics
 
 private struct AnalyticsTodayView: View {
-    @ObservedObject var model: SakHostModel
     let onOpenReport: (String) -> Void
     let onBack: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Revenue Card
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Total Gross Revenue")
                         .font(.caption)
@@ -99,7 +94,6 @@ private struct AnalyticsTodayView: View {
                             .foregroundStyle(.green)
                     }
 
-                    // Simple Chart Simulation
                     HStack(alignment: .bottom, spacing: 6) {
                         ForEach([0.4, 0.6, 0.3, 0.85, 0.55, 0.95, 0.7], id: \.self) { fraction in
                             RoundedRectangle(cornerRadius: 4)
@@ -115,45 +109,16 @@ private struct AnalyticsTodayView: View {
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 16))
 
-                // Grid Metrics
                 HStack(spacing: 12) {
                     MetricWidget(title: "Active Users", value: "14,210", change: "+12%")
                     MetricWidget(title: "Avg Session", value: "4m 12s", change: "+5%")
                 }
 
-                if model.isProPlan {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Pro Analytics Suite Active")
-                            .font(.headline)
-                        Text("Full cohort analysis and automated exports unlocked.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button("Open Weekly Performance Report") {
-                            onOpenReport("weekly")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding()
-                    .background(Color.accentColor.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Upgrade to Pro Tier")
-                            .font(.headline)
-                        Text("Unlock weekly report breakdowns & export capabilities.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button("Upgrade License via SAK Licensing") {
-                            model.navigate(to: "licensing/upgrade")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding()
-                    .background(Color.orange.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                Button("Open Weekly Performance Report") {
+                    onOpenReport("weekly")
                 }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
 
                 Button("Back to Shell") {
                     onBack()
@@ -198,7 +163,7 @@ private struct AnalyticsReportView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Weekly Performance Summary")
                     .font(.title2.bold())
-                Text("Report ID: \(reportId) • Generated Real-Time")
+                Text("Report ID: \(reportId)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Divider()
@@ -226,37 +191,21 @@ private struct AnalyticsReportView: View {
     }
 }
 
-// MARK: - Licensing (mirrors sample-licensing Compose screen)
+// MARK: - Feature controls
 
-private struct LicensingUpgradeView: View {
+private struct FeatureControlsView: View {
     @ObservedObject var model: SakHostModel
-    let onUnlock: () -> Void
-    let onReset: () -> Void
     let onBack: () -> Void
+
+    private let featureIds = ["analytics", "licensing"]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Tier Card
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Current Plan Tier")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(model.isProPlan ? "PRO ENTERPRISE TIER" : "STANDARD TRIAL TIER")
-                                .font(.headline.bold())
-                        }
-                        Spacer()
-                        Text(model.isProPlan ? "ACTIVE" : "TRIAL")
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(model.isProPlan ? Color.green : Color.orange)
-                            .foregroundStyle(.white)
-                            .clipShape(Capsule())
-                    }
-                    Text(model.isProPlan ? "Full access to advanced analytics reports, custom widgets, and priority API grants." : "Limited trial access. Upgrade to Pro to unlock advanced reporting and export features.")
+                    Text("Runtime feature state")
+                        .font(.headline)
+                    Text("Disabling a feature destroys it and removes its entry points. Re-enabling recreates and restarts it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -265,32 +214,31 @@ private struct LicensingUpgradeView: View {
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 16))
 
-                // Interactive Controls
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Interactive Entitlement Control")
-                        .font(.headline)
-                    Text("Simulate live remote license overlay emissions from server.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if model.isProPlan {
-                        Button("Downgrade / Reset to Trial Overlay") {
-                            onReset()
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        Button("Simulate Pro Upgrade (Emit Pro Overlay)") {
-                            onUnlock()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
+                ForEach(featureIds, id: \.self) { featureId in
+                    let enabled = model.isFeatureEnabled(featureId)
+                    HStack {
+                        Text(featureId)
+                            .font(.subheadline)
+                        Spacer()
+                        Text(enabled ? "ENABLED" : "DISABLED")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(enabled ? Color.green : Color.orange)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
                     }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    Button(enabled ? "Disable \(featureId)" : "Enable \(featureId)") {
+                        model.setFeatureEnabled(featureId, !enabled)
+                        model.refreshEntries()
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
 
                 Button("Back to Main Shell") {
                     onBack()

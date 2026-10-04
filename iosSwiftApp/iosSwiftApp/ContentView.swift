@@ -13,28 +13,12 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if model.tabs.isEmpty {
-                    ProgressView("Starting SAK Engine…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    DestinationView(model: model)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    TabBarView(model: model)
-                }
+                DestinationView(model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                FeatureControlsBar(model: model)
             }
-            .navigationTitle("SAK SuperApp Shell")
+            .navigationTitle("SAK Host Shell")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Text(model.isProPlan ? "PRO ACTIVE" : "TRIAL")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(model.isProPlan ? Color.green.opacity(0.2) : Color.orange.opacity(0.2))
-                        .foregroundStyle(model.isProPlan ? Color.green : Color.orange)
-                        .clipShape(Capsule())
-                }
-            }
             .navigationDestination(isPresented: routePresented) {
                 if let route = model.activeRoute {
                     FeatureRouteView(route: route.value, model: model)
@@ -47,24 +31,31 @@ struct ContentView: View {
     }
 }
 
-private struct TabBarView: View {
+/// Host-owned demonstration of runtime feature enable/disable.
+private struct FeatureControlsBar: View {
     @ObservedObject var model: SakHostModel
 
+    private let featureIds = ["analytics", "licensing"]
+
     var body: some View {
-        HStack {
-            ForEach(model.tabs) { tab in
+        HStack(spacing: 8) {
+            ForEach(featureIds, id: \.self) { featureId in
+                let enabled = model.isFeatureEnabled(featureId)
                 Button {
-                    model.selectDestination(tab.destination)
+                    model.setFeatureEnabled(featureId, !enabled)
+                    model.refreshEntries()
                 } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: tab.icon)
+                    VStack(spacing: 3) {
+                        Image(systemName: enabled ? "checkmark.circle.fill" : "pause.circle.fill")
                             .font(.subheadline)
-                        Text(tab.label)
+                        Text(featureId)
                             .font(.caption2)
+                        Text(enabled ? "on" : "off")
+                            .font(.caption2.bold())
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .foregroundStyle(model.selectedDestination == tab.destination ? Color.accentColor : Color.secondary)
+                    .padding(.vertical, 6)
+                    .foregroundStyle(enabled ? Color.green : Color.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -78,19 +69,29 @@ private struct TabBarView: View {
 private struct DestinationView: View {
     @ObservedObject var model: SakHostModel
 
+    private var visibleEntries: [SakHostModel.EntryRow] {
+        model.selectedDestination == SakHostModel.Home
+            ? model.entries
+            : model.entries.filter { $0.featureId == model.selectedDestination }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(model.selectedDestination.capitalized)
-                    .font(.title2.bold())
-                    .padding(.horizontal)
+                Picker("Destination", selection: $model.selectedDestination) {
+                    ForEach(model.availableDestinations, id: \.self) { destination in
+                        Text(destination.capitalized).tag(destination)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
 
-                if model.entries.isEmpty {
+                if visibleEntries.isEmpty {
                     VStack(spacing: 8) {
-                        Text("No active micro-frontend widgets for '\(model.selectedDestination)'")
+                        Text("No entry points published")
                             .font(.headline)
                             .foregroundStyle(.secondary)
-                        Text("Features publish entry points dynamically based on entitlement grants.")
+                        Text("Features publish entry points dynamically. Disabled features publish nothing.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .multilineTextAlignment(.center)
@@ -99,7 +100,7 @@ private struct DestinationView: View {
                     .padding(.vertical, 32)
                     .padding(.horizontal)
                 } else {
-                    ForEach(model.entries) { row in
+                    ForEach(visibleEntries) { row in
                         EntryCardView(row: row) {
                             model.onEntryTapped(row)
                         }
@@ -134,16 +135,23 @@ private struct EntryCardView: View {
                     }
                 }
 
-                Text(row.subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                if let val = row.valueText {
-                    Text(val)
-                        .font(.title2.bold())
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.top, 4)
+                if !row.subtitle.isEmpty {
+                    Text(row.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
+
+                HStack(spacing: 6) {
+                    Text(row.type)
+                    Text("·")
+                    Text(row.style)
+                    if let route = row.actionRoute {
+                        Text("·")
+                        Text(route).font(.caption.monospaced())
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
