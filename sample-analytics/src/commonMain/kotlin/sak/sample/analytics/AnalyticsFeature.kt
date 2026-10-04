@@ -1,92 +1,81 @@
 package sak.sample.analytics
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import sak.sdk.config.FeatureToggle
 import sak.sdk.entry.EntryAction
 import sak.sdk.entry.EntryPoint
 import sak.sdk.entry.EntryPointId
+import sak.sdk.entry.EntryPointType
 import sak.sdk.entry.EntryStyle
-import sak.sdk.feature.Feature
+import sak.sdk.feature.BaseFeature
 import sak.sdk.feature.FeatureContext
 import sak.sdk.feature.FeatureId
-import sak.sdk.feature.FeatureStatus
-import sak.sdk.navigation.Route
+import sak.sdk.feature.FeatureState
 
 /**
- * Sample analytics feature demonstrating plan-driven entry points:
- * - `summary-card` (Card) always shown on Home.
- * - `trial-tile` (Tile) shown on Home while on the trial plan.
- * - `report-row` (Row) shown on Alerts once the pro license grants `analytics.reports`.
+ * Sample analytics feature.
+ *
+ * Publishes entry point descriptors with descriptive details. The host app decides
+ * where and how these are rendered.
  */
-class AnalyticsFeature : Feature {
+class AnalyticsFeature : BaseFeature() {
     override val id = FeatureId("analytics")
 
-    private val _status = MutableStateFlow(FeatureStatus())
-    override val status: StateFlow<FeatureStatus> = _status.asStateFlow()
-
-    private val _entryPoints = MutableStateFlow<List<EntryPoint>>(emptyList())
-    override val entryPoints: StateFlow<List<EntryPoint>> = _entryPoints.asStateFlow()
-
-    private val _access = MutableStateFlow<FeatureToggle?>(null)
-    val access: StateFlow<FeatureToggle?> = _access.asStateFlow()
-
-    override val routes = listOf(
-        Route("analytics/today"),
-        Route("analytics/report/{reportId}"),
-    )
-
-    override suspend fun onActivated(context: FeatureContext) {
-        _access.value = context.access
-        publishEntries(context.access)
+    override suspend fun onCreate(context: FeatureContext) {
+        super.onCreate(context)
+        publishEntries()
+        updateStatus(FeatureState.Ready)
     }
 
-    override suspend fun onDeactivated() {
-        _entryPoints.value = emptyList()
+    override suspend fun onDestroy() {
+        super.onDestroy()
     }
 
-    override suspend fun onReset() {
-        _status.value = FeatureStatus()
-    }
-
-    override suspend fun onAccessChanged(context: FeatureContext) {
-        _access.value = context.access
-        publishEntries(context.access)
-    }
-
-    private fun publishEntries(access: FeatureToggle) {
-        val pro = access.plan == "pro" || access.grants.contains("analytics.reports")
-        val entries = mutableListOf(
-            EntryPoint(
-                id = EntryPointId("summary-card"),
-                style = EntryStyle.Card,
-                previewKey = "analytics.summary",
-                action = EntryAction.Navigate("analytics/today"),
-                priority = 10,
-                categories = setOf("home"),
-            ),
+    private fun publishEntries() {
+        setEntryPoints(
+            listOf(
+                EntryPoint(
+                    id = EntryPointId("summary-card"),
+                    type = EntryPointType.Dashboard,
+                    style = EntryStyle.Card,
+                    action = EntryAction.Navigate("analytics/today"),
+                    priority = 100,
+                    title = "Real-Time Traffic & Analytics",
+                    subtitle = "14.2k active sessions • +18.4% growth",
+                    icon = "chart_bar",
+                    badge = "LIVE",
+                ),
+                EntryPoint(
+                    id = EntryPointId("revenue-card"),
+                    type = EntryPointType.Summary,
+                    style = EntryStyle.Widget,
+                    action = EntryAction.Navigate("analytics/today"),
+                    priority = 90,
+                    title = "Revenue Today",
+                    subtitle = "Across all channels",
+                    icon = "payments",
+                ),
+                EntryPoint(
+                    id = EntryPointId("report-row"),
+                    type = EntryPointType.Card,
+                    style = EntryStyle.Row,
+                    action = EntryAction.Navigate("analytics/report/weekly"),
+                    priority = 70,
+                    title = "Weekly Performance Report",
+                    subtitle = "Conversion rate increased by +4.2% this week",
+                    icon = "document_chart",
+                    badge = "NEW",
+                ),
+                EntryPoint(
+                    id = EntryPointId("alerts-row"),
+                    type = EntryPointType.Alert,
+                    style = EntryStyle.Row,
+                    action = EntryAction.Navigate("analytics/today"),
+                    priority = 95,
+                    title = "Traffic Spike Detected",
+                    subtitle = "Unusual activity detected in the last hour",
+                    icon = "warning",
+                    badge = "ALERT",
+                ),
+            )
         )
-        if (!pro) {
-            entries += EntryPoint(
-                id = EntryPointId("trial-tile"),
-                style = EntryStyle.Tile,
-                previewKey = "analytics.trial",
-                action = EntryAction.Navigate("analytics/today"),
-                priority = 3,
-                categories = setOf("home"),
-            )
-        }
-        if (pro) {
-            entries += EntryPoint(
-                id = EntryPointId("report-row"),
-                style = EntryStyle.Row,
-                previewKey = "analytics.report",
-                action = EntryAction.Navigate("analytics/report/weekly"),
-                priority = 5,
-                categories = setOf("alerts"),
-            )
-        }
-        _entryPoints.value = entries
     }
 }

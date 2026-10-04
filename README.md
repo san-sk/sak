@@ -1,82 +1,60 @@
-# SAK — Standard Application Kit
+# SAK: Scalable App Kit
 
-Kotlin Multiplatform platform for **Android and iOS** — build business features once and host them in mobile apps. Access is driven by **JSON config** with an optional **signed license overlay**.
+SAK is a production-ready, highly decoupled Kotlin Multiplatform (KMP) architecture designed for scaling massive mobile applications. 
 
-This repo contains the **platform**, a **demo harness**, and two sample features.
+It allows teams to build independent **Feature Modules** that act as plugins. Features manage their own lifecycles, expose public APIs to sibling modules without hard dependencies, and emit UI metadata (`EntryPoints`) to the host applications (Android Compose / iOS SwiftUI) to render dynamically.
+
+## Core Capabilities
+*   **Plugin Architecture:** Features are lazy-loaded and decoupled. They can be dynamically added or removed at runtime without restarting the app.
+*   **The 3-Gate Activation System:** Features only boot up if they are (1) compiled into the app, (2) cryptographically licensed, and (3) enabled via Remote Config.
+*   **Micro-Frontend UI (`EntryPoint`):** Features do not dictate UI frameworks. They publish JSON-serializable `EntryPoint` widgets. The host app reads this stream and natively draws Android Compose or iOS SwiftUI cards.
+*   **Exactly-Once Navigation:** Navigation events are streamed through Coroutine `Channel`s to prevent Compose "double-navigation" bugs.
+*   **Zero-Allocation Typed IDs:** Domain IDs use `@JvmInline value class` for strict compile-time safety with zero runtime heap allocation.
+
+## Documentation
+
+The documentation has been consolidated into two comprehensive, production-ready guides:
+
+1.  [**Architecture & Knowledge Base**](docs/architecture.md): Deep dive into *why* the SDK is built this way. Contains architecture diagrams, explanations of SOLID principles, KMP boundaries, and Concurrency & Memory optimizations.
+2.  [**Integration Guide & Examples**](docs/integration.md): Step-by-step code examples on how to build a `Feature`, write a Compose/SwiftUI UI, and register it in the Host App.
 
 ---
 
-## Quick start
+## Quick Start Overview
 
-| Platform | Guide |
-|----------|--------|
-| **Architecture** | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — SDK, runtime, Mermaid diagrams |
-| **Android** | [docs/ANDROID.md](docs/ANDROID.md) — build, run harness, embed in your app |
-| **iOS** | [docs/IOS.md](docs/IOS.md) — Xcode, Simulator, embed framework |
-| **Config JSON** | [docs/config-schema.md](docs/config-schema.md) |
+### 1. Build a Feature (KMP `commonMain`)
+```kotlin
+class ChatFeature : BaseFeature() {
+    override val id = FeatureId("chat")
 
-```bash
-# Android
-./gradlew :sak-harness:installDebug
-
-# iOS framework (Compose harness)
-./gradlew :sak-harness:linkDebugFrameworkIosSimulatorArm64
-# Then open iosApp/iosApp.xcodeproj and run
-
-# iOS framework (SwiftUI harness)
-./gradlew :sak-ios-bridge:linkDebugFrameworkIosSimulatorArm64
-# Then open iosSwiftApp/iosSwiftApp.xcodeproj and run
+    override suspend fun onCreate(context: FeatureContext) {
+        super.onCreate(context)
+        
+        // Expose a UI widget to the host app
+        setEntryPoints(listOf(
+            EntryPoint(
+                id = EntryPointId("chat-card"),
+                type = EntryPointType.Dashboard,
+                action = EntryAction.Navigate("chat/home"),
+                title = "Live Chat",
+                icon = "chat_bubble"
+            )
+        ))
+        
+        updateStatus(FeatureState.Ready)
+    }
+}
 ```
 
----
+### 2. Boot the Runtime (Host App)
+```kotlin
+val registry = FeatureRegistry()
+    .registerFactory(FeatureId("chat")) { ChatFeature() } // Lazy loaded!
 
-## Repository layout
-
-```text
-sak-sdk/           Contracts (Feature, config, entry points) — no Compose
-sak-runtime/       Engine (lifecycle, config merge, render plan)
-sak-compose-ui/    SakApp scaffold + NavHost
-sak-ios-bridge/    Headless iOS bridge (SakIosHost) for native SwiftUI/UIKit
-sample-analytics/  Example feature
-sample-licensing/  Example licensing + LicenseProvider
-sak-harness/       Demo app (Android + iOS Compose framework)
-iosApp/            Xcode wrapper — Compose harness (SakHarness)
-iosSwiftApp/       Xcode wrapper — SwiftUI harness (SakIosBridge)
-docs/              Platform guides + config schema
+val runtime = SakRuntime(
+    featureRegistry = registry,
+    hostLifecycle = activityLifecycle,
+    scope = appScope
+)
+runtime.start()
 ```
-
----
-
-## Core loop
-
-1. Host loads **DefaultConfig** (JSON).
-2. Host bundles **feature modules** and calls **`SakLauncher.launch`**.
-3. Runtime merges license overlay → **ActiveConfig**, activates features.
-4. **`SakApp`** renders scaffold (bottom bar + destinations) and feature routes in one NavHost.
-
----
-
-## Prerequisites
-
-- JDK 17+
-- Android SDK (compile 35, min 26) for Android
-- macOS + Xcode for iOS (Kotlin 2.4.10 certifies Xcode up to 26.4)
-
----
-
-## Key concepts
-
-| Term | Meaning |
-|------|---------|
-| **Feature** | Pluggable module: entry points, routes, `FeatureStatus` |
-| **EntryPoint** | Widget on a scaffold tab; can navigate into the feature |
-| **setupComplete** | Feature reports when internal init is done (`FeatureStatus`) |
-| **ActiveConfig** | DefaultConfig + signed license `features` overlay |
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for flowcharts (launch, config merge, lifecycle, navigation, iOS vs Android). Code comments in `sak-sdk` and `sak-runtime` describe each type in detail.
-
----
-
-## License
-
-Personal project by san. All rights reserved.

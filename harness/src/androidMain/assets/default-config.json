@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "features": {
+    "analytics": { "enabled": true },
+    "licensing": { "enabled": true },
+    "demos": { "enabled": true },
+    "sak-debug": { "enabled": true }
+  }
+}

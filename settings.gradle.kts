@@ -1,6 +1,12 @@
 pluginManagement {
     repositories {
-        google()
+        google {
+            mavenContent {
+                includeGroupAndSubgroups("androidx")
+                includeGroupAndSubgroups("com.android")
+                includeGroupAndSubgroups("com.google")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -16,11 +22,9 @@ dependencyResolutionManagement {
 rootProject.name = "sak"
 
 include(
+    ":harness",
     ":sak-sdk",
     ":sak-runtime",
-    ":sak-compose-ui",
-    ":sak-ios-bridge",
     ":sample-analytics",
-    ":sample-licensing",
-    ":sak-harness",
+    ":sample-licensing"
 )

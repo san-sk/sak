@@ -1,85 +1,150 @@
 package sak.sample.licensing
 
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
-import sak.compose.ui.FieldRow
-import sak.compose.ui.InfoCard
-import sak.compose.ui.SakFeatureScreen
-import sak.compose.ui.SectionCard
+import kotlinx.coroutines.launch
+import sak.runtime.SakRuntime
+import sak.sdk.feature.FeatureId
 
-/** Registers licensing routes on the shared SAK NavHost. */
 fun NavGraphBuilder.licensingNavigation(
-    licenseProvider: SampleLicenseProvider,
+    runtime: SakRuntime,
+    allFeatureIds: Set<String>,
     onBack: () -> Unit,
 ) {
     composable("licensing/upgrade") {
-        LicensingUpgradeScreen(
-            onUnlock = { licenseProvider.unlockPro() },
-            onReset = { licenseProvider.resetToTrial() },
+        FeatureControlsScreen(
+            runtime = runtime,
+            allFeatureIds = allFeatureIds,
             onBack = onBack,
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LicensingUpgradeScreen(
-    onUnlock: () -> Unit,
-    onReset: () -> Unit,
+fun FeatureControlsScreen(
+    runtime: SakRuntime,
+    allFeatureIds: Set<String>,
     onBack: () -> Unit,
 ) {
-    val feature = LicensingFeatureModule.feature ?: return
-    val access by feature.access.collectAsState()
-    val pro = access?.plan == "pro"
+    val activeConfig by runtime.activeConfig.collectAsState()
+    val scope = rememberCoroutineScope()
 
-    SakFeatureScreen(
-        title = "Licensing",
-        subtitle = "Feature route · licensing/upgrade",
-    ) {
-        InfoCard(
-            "Tapping Unlock emits a signed license overlay. The runtime merges it into " +
-                "ActiveConfig and re-activates features: analytics gains the analytics.reports " +
-                "grant (report-row on Alerts) and licensing swaps its unlock-banner for a pro-widget.",
-        )
-        SectionCard("License state") {
-            FieldRow("plan", access?.plan ?: "\u2014")
-            FieldRow("grants", (access?.grants ?: emptySet()).joinToString(", ").ifEmpty { "\u2014" })
-        }
-        Spacer(Modifier.height(4.dp))
-        if (pro) {
-            InfoCard(
-                "Pro is active — entry points and flow have changed. Reset to trial to " +
-                    "revert the overlay and watch the widgets swap back.",
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Plugin Store") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
-            OutlinedButton(
-                onClick = onReset,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Reset to trial")
-            }
-        } else {
-            Button(
-                onClick = onUnlock,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Unlock Pro")
-            }
         }
-        OutlinedButton(
-            onClick = onBack,
-            modifier = Modifier.fillMaxWidth(),
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Back")
+            // Header Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Module Configuration", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Manage your active plugins. Toggling a module instantly triggers the SAK engine to mount or destroy the feature concurrently, without restarting the app.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+
+            Text("Installed Modules", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+
+            // Feature Switches
+            allFeatureIds.sorted().forEach { featureId ->
+                val isEnabled = activeConfig.isFeatureEnabled(featureId)
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isEnabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = featureId.replaceFirstChar { it.uppercase() }, 
+                                    style = MaterialTheme.typography.titleMedium, 
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (isEnabled) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = if (isEnabled) "Active and consuming resources" else "Destroyed to save memory",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isEnabled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { checked -> 
+                                scope.launch {
+                                    runtime.setFeatureEnabled(featureId, checked) 
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Text("Back to Dashboard")
+            }
         }
     }
 }

@@ -1,36 +1,48 @@
 package sak.sdk.feature
 
-import sak.sdk.api.ApiLookup
-import sak.sdk.config.FeatureToggle
+import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.CoroutineScope
+import sak.sdk.config.FeatureAccess
 import sak.sdk.navigation.Route
-import sak.sdk.service.AppServiceLookup
+import sak.sdk.service.ServiceLookup
 
 /**
- * What an active feature can do at runtime: read access, navigate, use APIs, register previews.
- * Provided by [sak.runtime.FeatureRuntimeContext] on [Feature.onActivated].
+ * The runtime environment sandbox injected into an active feature during [Feature.onCreate].
+ *
+ * The `FeatureContext` provides the feature module with safely scoped tools required to execute its logic.
+ * By injecting these tools, the feature remains decoupled from the `SakRuntime` engine and the Host OS.
  */
 interface FeatureContext {
-    /** Current access snapshot (plan, grants, entries) from ActiveConfig. */
-    val access: FeatureToggle
+    /** 
+     * The current remote configuration snapshot for this specific feature.
+     * Contains the enablement status and custom JSON parameters (e.g., sampling rates, theme overrides).
+     */
+    val access: FeatureAccess
 
-    /** Request navigation on the host NavHost (same graph as scaffold + features). */
+    /**
+     * The Service Locator registry.
+     * Features use this to look up public APIs exported by other sibling features or the Host OS,
+     * ensuring zero compile-time coupling between plugin modules.
+     */
+    val services: ServiceLookup
+
+    /**
+     * A managed CoroutineScope bound strictly to this feature's lifecycle.
+     * When the feature is destroyed (due to config changes or app exit), all jobs launched
+     * in this scope are automatically and instantly cancelled.
+     */
+    val coroutineScope: CoroutineScope
+
+    /**
+     * The platform [Lifecycle] registry synchronized with the Host container (Android Activity or SwiftUI Scene).
+     * Features should use this to pause background work (like WebSockets) when the Host OS goes to the background.
+     */
+    val lifecycle: Lifecycle
+
+    /**
+     * Emits a navigation request over the exact-once Event Channel to the host application shell.
+     *
+     * @param route Target destination route (e.g. `Route("analytics/today")`).
+     */
     fun navigate(route: Route)
-
-    /** Look up APIs registered by other active features. */
-    val apis: ApiLookup
-
-    /** Host-provided services (analytics, auth, storage, …). */
-    val services: AppServiceLookup
-
-    /** Register entry-point preview composables by [sak.sdk.entry.EntryPoint.previewKey]. */
-    val screens: ScreenRegistry
 }
-
-/** Maps preview keys to UI registrations (rendered by sak-compose-ui). */
-interface ScreenRegistry {
-    fun register(previewKey: String, registration: ScreenRegistration)
-    fun unregister(previewKey: String)
-}
-
-/** UI binding is implemented in sak-compose-ui; SDK holds the contract only. */
-interface ScreenRegistration

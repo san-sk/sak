@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Maps SAK route strings to native SwiftUI screens (sample features).
+/// Maps SAK route strings to native SwiftUI screens.
+///
+/// Route strings come from feature entry point actions; the host decides how to
+/// present them.
 enum SakParsedRoute: Equatable {
     case analyticsToday
     case analyticsReport(reportId: String)
-    case licensingUpgrade
+    case featureControls
     case unknown(String)
 
     init(_ route: String) {
@@ -12,7 +15,7 @@ enum SakParsedRoute: Equatable {
         case "analytics/today":
             self = .analyticsToday
         case "licensing/upgrade":
-            self = .licensingUpgrade
+            self = .featureControls
         default:
             let reportPrefix = "analytics/report/"
             if route.hasPrefix(reportPrefix) {
@@ -27,11 +30,11 @@ enum SakParsedRoute: Equatable {
     var navigationTitle: String {
         switch self {
         case .analyticsToday:
-            return "Analytics · Today"
+            return "Real-Time Analytics"
         case .analyticsReport(let reportId):
             return "Report: \(reportId)"
-        case .licensingUpgrade:
-            return "Upgrade license"
+        case .featureControls:
+            return "Feature Controls"
         case .unknown(let route):
             return route
         }
@@ -59,11 +62,8 @@ struct FeatureRouteView: View {
                     reportId: reportId,
                     onBack: { model.navigate(to: "analytics/today") }
                 )
-            case .licensingUpgrade:
-                LicensingUpgradeView(
-                    onUnlock: { model.unlockPro() },
-                    onBack: { model.closeRoute() }
-                )
+            case .featureControls:
+                FeatureControlsView(model: model, onBack: { model.closeRoute() })
             case .unknown(let route):
                 UnknownRouteView(route: route)
             }
@@ -73,30 +73,84 @@ struct FeatureRouteView: View {
     }
 }
 
-// MARK: - Analytics (mirrors sample-analytics Compose screens)
+// MARK: - Analytics
 
 private struct AnalyticsTodayView: View {
     let onOpenReport: (String) -> Void
     let onBack: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Analytics · Today")
-                .font(.largeTitle.bold())
-            Text("Trial summary: 42 events today")
-                .foregroundStyle(.secondary)
-            Button("Open weekly report") {
-                onOpenReport("weekly")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Total Gross Revenue")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("$128,450.00")
+                            .font(.largeTitle.bold())
+                        Text("+18.4%")
+                            .font(.headline.bold())
+                            .foregroundStyle(.green)
+                    }
+
+                    HStack(alignment: .bottom, spacing: 6) {
+                        ForEach([0.4, 0.6, 0.3, 0.85, 0.55, 0.95, 0.7], id: \.self) { fraction in
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.accentColor)
+                                .frame(height: 50 * fraction)
+                        }
+                    }
+                    .frame(height: 60)
+                    .padding(.top, 8)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                HStack(spacing: 12) {
+                    MetricWidget(title: "Active Users", value: "14,210", change: "+12%")
+                    MetricWidget(title: "Avg Session", value: "4m 12s", change: "+5%")
+                }
+
+                Button("Open Weekly Performance Report") {
+                    onOpenReport("weekly")
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+
+                Button("Back to Shell") {
+                    onBack()
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            Button("Back") {
-                onBack()
-            }
-            .buttonStyle(.bordered)
-            Spacer()
+            .padding()
         }
+    }
+}
+
+private struct MetricWidget: View {
+    let title: String
+    let value: String
+    let change: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.bold())
+            Text(change)
+                .font(.caption2.bold())
+                .foregroundStyle(.green)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -105,46 +159,95 @@ private struct AnalyticsReportView: View {
     let onBack: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Report: \(reportId)")
-                .font(.largeTitle.bold())
-            Text("Pro analytics report content")
-                .foregroundStyle(.secondary)
-            Button("Back") {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Weekly Performance Summary")
+                    .font(.title2.bold())
+                Text("Report ID: \(reportId)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Divider()
+                Text("• Customer Retention: 84.5%")
+                    .font(.subheadline)
+                Text("• Top Traffic Channel: Organic Search (45%)")
+                    .font(.subheadline)
+                Text("• Server Latency: 120ms avg")
+                    .font(.subheadline)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+
+            Button("Back to Dashboard") {
                 onBack()
             }
             .buttonStyle(.bordered)
+            .frame(maxWidth: .infinity)
+
             Spacer()
         }
         .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
-// MARK: - Licensing (mirrors sample-licensing Compose screen)
+// MARK: - Feature controls
 
-private struct LicensingUpgradeView: View {
-    let onUnlock: () -> Void
+private struct FeatureControlsView: View {
+    @ObservedObject var model: SakHostModel
     let onBack: () -> Void
 
+    private let featureIds = ["analytics", "licensing"]
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Upgrade license")
-                .font(.largeTitle.bold())
-            Text("Unlock pro analytics via signed license overlay")
-                .foregroundStyle(.secondary)
-            Button("Unlock Pro") {
-                onUnlock()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Runtime feature state")
+                        .font(.headline)
+                    Text("Disabling a feature destroys it and removes its entry points. Re-enabling recreates and restarts it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                ForEach(featureIds, id: \.self) { featureId in
+                    let enabled = model.isFeatureEnabled(featureId)
+                    HStack {
+                        Text(featureId)
+                            .font(.subheadline)
+                        Spacer()
+                        Text(enabled ? "ENABLED" : "DISABLED")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(enabled ? Color.green : Color.orange)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    Button(enabled ? "Disable \(featureId)" : "Enable \(featureId)") {
+                        model.setFeatureEnabled(featureId, !enabled)
+                        model.refreshEntries()
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                }
+
+                Button("Back to Main Shell") {
+                    onBack()
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            Button("Back") {
-                onBack()
-            }
-            .buttonStyle(.bordered)
-            Spacer()
+            .padding()
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

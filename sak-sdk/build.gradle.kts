@@ -29,6 +29,7 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            api(libs.androidx.lifecycle.runtime)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
