@@ -1,46 +1,88 @@
 # SAK Integration Guide & Examples
 
-This guide explains how to build a new feature module using the Scalable App Kit (SAK) and how to register it with host applications across Kotlin Multiplatform (KMP), Android (Compose), and iOS (SwiftUI). It covers basic setup, as well as advanced concepts like IPC (Inter-Process Communication), custom JSON metadata, and Error handling.
+This guide provides step-by-step instructions and code examples for building feature modules using the Scalable App Kit (SAK) and integrating them into Host Applications on **Android (Jetpack Compose)**, **iOS (SwiftUI)**, and **Kotlin Multiplatform (KMP)**.
 
 ---
 
-## 1. Create the Feature Logic (KMP `commonMain`)
+## 1. Create a Feature Logic Module (KMP `commonMain`)
 
-Features should be created in a dedicated KMP module (e.g., `:feature-chat`). 
-Inside `commonMain`, implement your feature logic by extending `BaseFeature`.
+Features are created in dedicated multiplatform modules (e.g. `:feature-chat`). Inside `commonMain`, extend `BaseFeature`.
 
-### Basic Feature Implementation
 ```kotlin
 // feature-chat/src/commonMain/kotlin/com/example/chat/ChatFeature.kt
 package com.example.chat
 
-import sak.sdk.feature.*
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import sak.sdk.entry.*
+import sak.sdk.feature.*
+import sak.sdk.service.*
 
 class ChatFeature : BaseFeature() {
     // 1. Define the zero-allocation unique ID
     override val id = FeatureId("chat")
 
-    // 2. Initialize heavy logic (Concurrent & Non-blocking)
+    // 2. Export public APIs for Inter-Process Communication (IPC)
+    override fun services(): Set<FeatureService<*>> = setOf(
+        featureService(ChatApi::class, ChatApiImpl())
+    )
+
+    // 3. Concurrent & Non-blocking Initialization
     override suspend fun onCreate(context: FeatureContext) {
         super.onCreate(context)
         
-        publishEntries()
-        
-        // Mark as ready
-        updateStatus(FeatureState.Ready)
+        try {
+            // Read remote configuration params
+            val theme = context.access.params["theme"]?.toString() ?: "light"
+            
+            // Use services exported by sibling features (Null-safe!)
+            val logger = context.services.get<LoggerApi>()
+            logger?.log("Chat Feature booted with theme: $theme")
+
+            // Publish UI metadata to Host
+            publishEntries()
+            
+            // Set status to Ready
+            updateStatus(FeatureState.Ready)
+            
+            // Optionally request the host to render an unread badge on the nav bar
+            updateAttention(Attention.Medium)
+        } catch (e: Exception) {
+            // Graceful error reporting instead of crashing the app
+            updateStatus(FeatureState.Error("Failed to initialize Chat DB: ${e.message}"))
+            updateAttention(Attention.High)
+        }
+    }
+
+    // 4. React to Live Remote Config Updates
+    override suspend fun onConfigChanged(access: FeatureAccess) {
+        val newTheme = access.params["theme"]?.toString() ?: "light"
+        println("Hot-swapping theme to: $newTheme")
+    }
+
+    override suspend fun onDestroy() {
+        super.onDestroy()
+        // Clean up resources. Note: context.coroutineScope is automatically cancelled.
     }
 
     private fun publishEntries() {
+        val customPayload = buildJsonObject {
+            put("unread_count", 3)
+            put("latest_sender", "Sarah")
+        }
+
         setEntryPoints(listOf(
             EntryPoint(
                 id = EntryPointId("chat-dashboard-card"),
                 type = EntryPointType.Dashboard,
                 style = EntryStyle.Card,
-                action = EntryAction.Navigate("chat/home"), // Navigates to the native UI route
+                action = EntryAction.Navigate("chat/home"),
                 priority = 100,
                 title = "Live Chat",
-                icon = "chat_bubble"
+                subtitle = "Sarah: Is the SAK update ready?",
+                icon = "chat_bubble",
+                badge = "3 UNREAD",
+                metadata = mapOf("chat_data" to customPayload)
             )
         ))
     }
@@ -49,103 +91,11 @@ class ChatFeature : BaseFeature() {
 
 ---
 
-## 2. Advanced Feature Capabilities
+## 2. Build the Native UI
 
-### Inter-Process Communication (IPC) via Service Locator
-Features should not have hard Gradle dependencies on each other. Instead, use the `ServiceRegistry`.
+Features do not include UI framework code in `commonMain` to maintain KMP purity. You build platform UIs in native source sets.
 
-**Exporting a Service (Feature A):**
-```kotlin
-// core-feature/src/commonMain/kotlin/com/example/core/CoreFeature.kt
-interface LoggerApi {
-    fun log(message: String)
-}
-
-class CoreFeature : BaseFeature() {
-    override val id = FeatureId("core")
-
-    // Export the API to the Host Runtime
-    override fun services(): Set<FeatureService<*>> = setOf(
-        featureService(LoggerApi::class, object : LoggerApi {
-            override fun log(message: String) { println("LOG: $message") }
-        })
-    )
-}
-```
-
-**Consuming a Service (Feature B):**
-```kotlin
-// chat-feature/src/commonMain/kotlin/com/example/chat/ChatFeature.kt
-override suspend fun onCreate(context: FeatureContext) {
-    super.onCreate(context)
-    
-    // Look up the service. Returns null if CoreFeature is disabled!
-    val logger = context.services.get<LoggerApi>()
-    logger?.log("Chat feature is booting up safely.")
-}
-```
-
-### Advanced UI via EntryPoint `metadata`
-If an `EntryPoint` needs to render a complex custom graph, it can pass arbitrary JSON data to the host.
-
-```kotlin
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-
-val graphData = buildJsonObject {
-    put("type", "line_chart")
-    put("data_points", "[10, 20, 50, 30]")
-}
-
-EntryPoint(
-    id = EntryPointId("analytics-graph"),
-    type = EntryPointType.Custom,
-    title = "Weekly Traffic",
-    metadata = mapOf("custom_graph_payload" to graphData)
-)
-```
-*The Compose/SwiftUI host app can read this `metadata` dictionary and draw the chart nativeley.*
-
-### Handling Errors & Attention Levels
-Features are observable. If a database fails to load, inform the host app gracefully.
-
-```kotlin
-override suspend fun onCreate(context: FeatureContext) {
-    super.onCreate(context)
-    
-    try {
-        loadDatabase()
-        updateStatus(FeatureState.Ready)
-        
-        // Request the host app to show a badge on the navigation bar
-        updateAttention(Attention.Medium) 
-        
-    } catch (e: Exception) {
-        // Host app will observe this and can show a localized Error Card instead of crashing
-        updateStatus(FeatureState.Error("Failed to load local chat database."))
-        updateAttention(Attention.High)
-    }
-}
-```
-
-### Reacting to Live Remote Config Updates
-If the server pushes a new JSON config payload while the app is running, your feature can react instantly without restarting.
-
-```kotlin
-override suspend fun onConfigChanged(access: FeatureAccess) {
-    // The server sent down {"params": {"sampling_rate": 0.1}}
-    val rate = access.params["sampling_rate"]?.toString()?.toDoubleOrNull() ?: 1.0
-    applyNewSamplingRate(rate)
-}
-```
-
----
-
-## 3. Build the Platform UI
-
-Because SAK strictly protects the KMP boundary, UI logic stays out of `commonMain`. You build your UI in platform-specific source sets or modules.
-
-### Android Compose (in `androidMain` or `app` module)
+### Android Jetpack Compose (`androidMain` or Host App)
 ```kotlin
 // feature-chat/src/androidMain/kotlin/com/example/chat/ChatNavigation.kt
 import androidx.navigation.NavGraphBuilder
@@ -161,10 +111,13 @@ fun NavGraphBuilder.chatNavigation(
             onBack = onBack
         )
     }
+    composable("chat/settings") {
+        ChatSettingsScreen(onBack = onBack)
+    }
 }
 ```
 
-### iOS SwiftUI (in Xcode)
+### iOS SwiftUI (`iOSApp` Xcode Project)
 ```swift
 // iOSApp/ChatFeature/ChatHomeView.swift
 import SwiftUI
@@ -174,9 +127,11 @@ struct ChatHomeView: View {
     var onBack: () -> Void
     
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             Text("Live Chat Home")
-            Button("Settings", action: onOpenSettings)
+                .font(.largeTitle)
+            Button("Chat Settings", action: onOpenSettings)
+            Button("Back", action: onBack)
         }
     }
 }
@@ -184,52 +139,65 @@ struct ChatHomeView: View {
 
 ---
 
-## 4. Register with the Host Application
+## 3. Register with the Host Application
 
-To make the feature available, the Host App must register it in two places: The **Logic Engine** and the **UI Router**.
+### Step 3a: Logic Engine Registration
 
-### Step 4a: Register the Logic in SAK Runtime
-In your main DI container, add the feature to the `FeatureRegistry` using a **lazy factory**.
-
-**Android:**
+**Android (`MainActivity.kt` or `Application`):**
 ```kotlin
 val featureRegistry = FeatureRegistry()
     .registerFactory(FeatureId("analytics")) { AnalyticsFeature() }
-    .registerFactory(FeatureId("chat")) { ChatFeature() } // Lazy initialization!
+    .registerFactory(FeatureId("chat")) { ChatFeature() } // Lazy factory registration!
 
 val sakRuntime = SakRuntime(
+    baseConfig = loadLocalConfig(),
     featureRegistry = featureRegistry,
-    hostLifecycle = activityLifecycle,
-    scope = appScope
+    serviceRegistry = ServiceRegistry(),
+    scope = appScope,
+    hostLifecycle = LocalLifecycleOwner.current.lifecycle
 )
+
+LaunchedEffect(Unit) {
+    sakRuntime.start()
+}
 ```
 
-**iOS (Swift):**
+**iOS Swift (`AppModel.swift`):**
 ```swift
-let sakHost = SakIosHost(
-    defaultConfigJson: "{}",
-    features: [AnalyticsFeature(), ChatFeature()]
-)
-sakHost.start()
+import SakIosBridge
+
+@MainActor
+final class AppModel: ObservableObject {
+    private let host = SakIosHost(
+        defaultConfigJson: "{}",
+        features: [AnalyticsFeature(), ChatFeature()]
+    )
+
+    func start() {
+        host.start {
+            print("SAK Engine Online on iOS!")
+        }
+    }
+}
 ```
 
-### Step 4b: Register the UI in the Host Router
-Wire up the UI function to listen to the exact-once `navigationEvents` channel.
+### Step 3b: UI Navigation Registration
 
-**Android (Compose NavHost):**
+**Android (`HarnessApp.kt`):**
 ```kotlin
-// HarnessApp.kt
 val navController = rememberNavController()
 
+// Listen to exact-once navigation channel
 LaunchedEffect(runtime) {
-    // Exact-once delivery prevents "double navigation"
     runtime.navigationEvents.collectLatest { route ->
         navController.navigate(route.value) { launchSingleTop = true }
     }
 }
 
 NavHost(navController = navController, startDestination = "home") {
-    // Attach the Chat Feature UI
+    composable("home") { HomeDashboard(runtime) }
+    
+    // Wire up feature UI graphs
     chatNavigation(
         onNavigate = { route -> runtime.navigate(Route(route)) },
         onBack = { navController.popBackStack() }
@@ -237,25 +205,27 @@ NavHost(navController = navController, startDestination = "home") {
 }
 ```
 
-**iOS (SwiftUI NavigationStack):**
+**iOS SwiftUI (`ContentView.swift`):**
 ```swift
 struct ContentView: View {
+    @StateObject private var appModel = AppModel()
     @State private var navPath = NavigationPath()
 
     var body: some View {
         NavigationStack(path: $navPath) {
-            HomeDashboard()
+            HomeDashboardView(appModel: appModel)
                 .navigationDestination(for: String.self) { route in
                     if route == "chat/home" {
                         ChatHomeView(
-                            onOpenSettings: { sakHost.navigate(route: "chat/settings") },
-                            onBack: { navPath.removeLast() }
+                            onOpenSettings = { appModel.host.navigate(route: "chat/settings") },
+                            onBack = { navPath.removeLast() }
                         )
                     }
                 }
         }
         .onAppear {
-            sakHost.observeNavigation { route in
+            appModel.start()
+            appModel.host.observeNavigation { route in
                 if let r = route { navPath.append(r) }
             }
         }
@@ -265,31 +235,49 @@ struct ContentView: View {
 
 ---
 
-## 5. Enable via Configuration
+## 4. Live Remote Configuration Updates
 
-Even though the feature is registered, it will not consume memory or run until the configuration enables it.
+You can push live configuration updates (e.g. from Firebase Remote Config or a REST API) at any time.
 
 ```kotlin
-// JSON payload from remote server (e.g. Firebase Remote Config)
-val remoteConfigJson = """
+// Server response JSON
+val serverJson = """
 {
   "version": 2,
   "features": {
-    "chat": { 
+    "chat": {
       "enabled": true,
-      "params": { "theme": "dark" }
+      "params": {
+        "theme": "dark",
+        "max_history": 50
+      }
+    },
+    "analytics": {
+      "enabled": false
     }
   }
 }
 """
 
-// Apply to runtime
-val overlay = SakJson.decodeFromString<SakConfig>(remoteConfigJson)
-sakRuntime.updateConfig(overlay)
+// Parse and update runtime overlay
+val overlayConfig = SakJson.decodeFromString<SakConfig>(serverJson)
+scope.launch {
+    sakRuntime.updateConfig(overlayConfig)
+}
 ```
 
-When this runs, `FeatureManager` will instantly:
-1. Detect the state change inside a fast Mutex lock.
-2. Concurrently call `ChatFeature.onCreate()`.
-3. Publish the entry point widget to the Home screen (updating the UI StateFlow).
-4. Route user taps seamlessly over the exact-once Channel to the native `NavHost` / `NavigationStack`!
+**What happens automatically:**
+1. `AnalyticsFeature` is immediately torn down (`onDestroy()`), its coroutine scope is cancelled, and its entry point cards disappear from the Home Dashboard.
+2. `ChatFeature` is instantiated concurrently (`onCreate()`), receives the `params` dictionary, and publishes its `EntryPoint` cards to the Home Dashboard.
+
+---
+
+## 5. Troubleshooting Guide
+
+| Symptom | Cause | Solution |
+| :--- | :--- | :--- |
+| **Feature doesn't start** | Failed one of the 3 Gates. | Check if (1) `FeatureRegistry` has a factory, (2) `FeatureEntitlements.isLicensed()` returns `true`, and (3) `SakConfig.isFeatureEnabled()` returns `true`. |
+| **Double Navigation in Compose** | Listening to a `StateFlow` for routes. | Collect from `SakRuntime.navigationEvents` (`Channel<Route>`) which guarantees exactly-once delivery. |
+| **Slow App Startup** | Pre-instantiating features in Registry. | Use `registerFactory(id) { Feature() }` instead of `register(Feature())` to enable lazy initialization. |
+| **Thread Deadlock during onCreate** | Blocking main thread in feature setup. | Use `context.coroutineScope.launch { ... }` or suspend functions inside `onCreate`. `FeatureManager` executes `onCreate` concurrently. |
+| **`context.services.get<T>()` returns null** | Sibling feature is disabled or not registered. | Always handle null return types from `ServiceLookup`. Implement graceful fallback logic if the optional feature isn't active. |

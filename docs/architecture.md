@@ -1,20 +1,31 @@
 # SAK Architecture & Knowledge Base
 
-The Scalable App Kit (SAK) is a highly decoupled, plugin-based Kotlin Multiplatform (KMP) framework. It is designed to solve the structural problems of massive mobile applications: slow build times, cyclic dependencies, UI framework lock-in, and monolithic state management.
+The Scalable App Kit (SAK) is a highly decoupled, plugin-based Kotlin Multiplatform (KMP) framework. It is designed to solve the structural problems of massive mobile applications ("Super-Apps"): slow build times, cyclic dependencies, UI framework lock-in, and monolithic state management.
 
-This document serves as the primary knowledge base for the project. It details the **Micro-kernel architecture**, the **SOLID principles** applied, and the exact reasoning behind every major technical decision.
+This document serves as the primary knowledge base for the project. It details the **Micro-kernel architecture**, the **Mission & Goals**, the **SOLID principles applied**, **Platform Differences (Android vs iOS)**, and the **Framework Roadmap**.
 
 ---
 
-## 1. The Core Philosophy: Micro-Kernel & Plugin Architecture
+## 1. Core Mission & Objectives
+
+### The Mission
+To provide a robust foundation for enterprise applications where independent teams can develop, deploy, and maintain business features as isolated modules with zero compile-time dependencies on each other, while giving the Host Application ultimate control over user experience, navigation, and licensing.
+
+### Key Objectives
+1. **Protocol-First Decoupling:** The SDK defines *how* features communicate, not *what* they look like or *where* they appear.
+2. **Host-Driven User Experience:** The Host Application owns the top-level layout (Navigation bars, Tabs) and provides "Placeholders" where features plug in their Micro-Frontend widgets (`EntryPoint`).
+3. **Reactive Licensing & Entitlements:** Features observe an `ActiveConfig` flow. When a user upgrades their license, features instantly unlock new entry points and internal capabilities without restarting the app.
+4. **Resilient Coroutine Lifecycle:** Managed coroutine scopes ensure that a crash or memory leak in one buggy feature cannot crash the entire system.
+
+---
+
+## 2. The Core Philosophy: Micro-Kernel Architecture
 
 SAK is built on a **Micro-Kernel architecture** (often called a Plugin architecture).
-*   **The Kernel (`SakRuntime`)**: A lightweight, pure-logic engine. It knows nothing about your app's business logic, UI, or databases. It only knows how to load, configure, and orchestrate plugins.
-*   **The Plugins (`Feature`)**: Independent modules (e.g., `AnalyticsFeature`, `ChatFeature`). They contain the actual business logic.
 
 ```mermaid
 graph TD
-    Host[Host App<br/>Android / iOS] --> SAK[SakRuntime<br/>Micro-Kernel]
+    Host[Host App<br/>Android Compose / iOS SwiftUI] --> SAK[SakRuntime<br/>Micro-Kernel]
     SAK --> Registry[FeatureRegistry]
     SAK --> License[FeatureEntitlements]
     SAK --> Config[SakConfig]
@@ -27,12 +38,15 @@ graph TD
     style Host fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
 ```
 
-**Why this is the best approach:**
-In a standard app, `MainActivity` directly imports `ChatManager` and `AnalyticsManager`. As the app grows, every feature becomes entangled. In SAK, the Dependency Inversion Principle (DIP) is strictly enforced. The Host App depends on the SAK Core, and Features depend on the SAK Core. Features **never** directly depend on the Host App or each other.
+*   **The Kernel (`SakRuntime`)**: A lightweight, pure-logic engine in `commonMain`. It knows nothing about your app's business logic, UI, or databases. It only knows how to load, configure, and orchestrate plugins.
+*   **The Plugins (`Feature`)**: Independent modules (e.g., `AnalyticsFeature`, `ChatFeature`). They contain the actual business logic.
+
+**SOLID Dependency Inversion:**
+In a standard app, `MainActivity` directly imports `ChatManager` and `AnalyticsManager`. In SAK, the Dependency Inversion Principle (DIP) is strictly enforced. The Host App depends on SAK Core, and Features depend on SAK Core. Features **never** directly depend on the Host App or each other.
 
 ---
 
-## 2. The 3-Gate Activation Model & Lifecycle
+## 3. The 3-Gate Activation Model & Lifecycle
 
 A Feature in SAK consumes zero memory and executes zero code until it passes three distinct runtime gates evaluated by `FeatureManager`. 
 
@@ -70,13 +84,13 @@ A functional interface checking if a user has the right to use the feature. Allo
 
 ### Gate 3: Enabled (`SakConfig` & `FeatureAccess`)
 A JSON-serializable remote config payload. If a feature causes a crash in production, a remote config update flips `enabled: false`, and SAK immediately tears down the feature.
-Furthermore, `FeatureAccess` contains a `params: Map<String, JsonElement>` dictionary. This allows the server to pass dynamic configuration (like "sampling_rate": 0.5) directly into the feature upon activation.
+Furthermore, `FeatureAccess` contains a `params: Map<String, JsonElement>` dictionary. This allows the server to pass dynamic configuration (like `"sampling_rate": 0.5`) directly into the feature upon activation.
 
 ---
 
-## 3. Feature Observability: Status, State, and Attention
+## 4. Feature Observability: Status, State, and Attention
 
-Unlike monolithic apps where the UI has to constantly poll the database to know if a feature is broken, SAK features are inherently observable. Features publish a `StateFlow<FeatureStatus>`.
+Features publish a `StateFlow<FeatureStatus>` so the host app can monitor their state without polling.
 
 ### `FeatureState`: The Health of the Module
 *   `Initializing`: The feature is performing heavy I/O in `onCreate`. Host apps usually show a spinner.
@@ -92,18 +106,18 @@ Features compete for the user's attention. SAK standardizes this via the `Attent
 
 ---
 
-## 4. UI & Micro-Frontends (The KMP Boundary)
+## 5. UI & Micro-Frontends (The KMP Boundary)
 
 One of the most complex challenges in Kotlin Multiplatform is UI. Android uses Jetpack Compose; iOS uses SwiftUI. 
 
 **The Anti-Pattern:** 
-Many SDKs try to build an abstraction over Compose and SwiftUI, or they force Compose Multiplatform (CMP) everywhere. Worse, they put `NavGraphBuilder` right into the `commonMain` code, immediately breaking iOS compilation.
+Putting `NavGraphBuilder` or Compose dependencies right into the `commonMain` code breaks iOS compilation.
 
 **The SAK Solution: Micro-Frontends via `EntryPoint`**
 SAK treats UI as "Server-Driven UI" where the "Server" is just the local Feature Module.
 *   Features do **not** draw screens. They emit `EntryPoint` data structures.
-*   An `EntryPoint` is incredibly descriptive. It contains semantic types (`Dashboard`, `Alert`, `Settings`), style hints (`Card`, `Row`, `Banner`), badges, icons, and actions.
-*   The Host App observes `SakRuntime.allEntryPoints`. It sees the data and natively draws Compose Cards or SwiftUI Views.
+*   An `EntryPoint` is descriptive: semantic types (`Dashboard`, `Alert`, `Settings`), style hints (`Card`, `Row`, `Banner`), badges, icons, and actions.
+*   The Host App observes `SakRuntime.allEntryPoints` and natively draws Compose Cards or SwiftUI Views.
 
 ```mermaid
 sequenceDiagram
@@ -121,51 +135,81 @@ sequenceDiagram
     Host-->>Host: Native Router opens "chat/home"
 ```
 
-**Advanced UI via `Metadata`**
-If an `EntryPoint` needs to show a complex graph, it doesn't pass UI code. It passes pure data. The `EntryPoint` has a `metadata: Map<String, JsonElement>` field. A feature can inject `"graph_data": [10, 50, 30]`, and the Host App's custom Card renderer can read that JSON and draw a beautiful SwiftUI LineChart.
+---
+
+## 6. Platform Architecture: Android vs. iOS
+
+| Architectural Concept | Android (Jetpack Compose) | iOS (SwiftUI + `SakIosBridge`) |
+| :--- | :--- | :--- |
+| **Host Container** | `ComponentActivity` / `NavHost` | `UIWindow` / `NavigationStack` |
+| **Lifecycle Integration** | `LocalLifecycleOwner.current.lifecycle` | `SakIosHost.onScenePhaseActive/Inactive()` |
+| **Navigation Event Collector** | `LaunchedEffect { runtime.navigationEvents.collect { ... } }` | `sakHost.observeNavigation { route in navPath.append(route) }` |
+| **UI Rendering** | `LazyColumn` / `Card` from `allEntryPoints` | `ScrollView` / `VStack` driven by `SakIosHost.queryEntryPoints()` |
 
 ---
 
-## 5. Inter-Process Communication (The Service Locator)
+## 7. Inter-Process Communication (The Service Locator)
 
-If features are decoupled, how does `AnalyticsFeature` log a message if `CoreFeature` owns the Logger?
-
-**The Anti-Pattern:**
-`AnalyticsFeature` adds a Gradle `implementation(project(":core-feature"))`. This creates tightly coupled build graphs and eventually leads to circular dependency build failures.
-
-**The SAK Solution: `FeatureService` and `ServiceLookup`**
-SAK uses a strict **Service Locator Pattern**.
+SAK uses a strict **Service Locator Pattern** (`FeatureService` & `ServiceLookup`).
 1.  `CoreFeature` implements a public `LoggerApi` interface. In its `services()` function, it registers the implementation.
 2.  `SakRuntime` collects all exported services into a global `ServiceRegistry`.
 3.  `AnalyticsFeature` boots up. It asks its `FeatureContext`: `val logger = context.services.get<LoggerApi>()`.
 
-*Why it's the best:* Zero compile-time coupling between sibling features. If `CoreFeature` is disabled remotely, `get<LoggerApi>()` safely returns `null`. Features can gracefully degrade instead of crashing the app.
+This guarantees **zero compile-time coupling** between sibling feature modules. If `CoreFeature` is disabled remotely, `get<LoggerApi>()` safely returns `null`.
 
 ---
 
-## 6. Event Streams vs. State Streams (Navigation)
+## 8. Concurrency & Performance Optimizations
 
-**The Anti-Pattern:**
-Using `MutableStateFlow` for navigation events (e.g., `val currentRoute: StateFlow<Route>`). `StateFlow` holds its last value and replays it to new subscribers. If the user rotates their phone, the UI recomposes, re-subscribes to the `StateFlow`, receives the same route again, and crashes the app with a "double navigation" exception.
-
-**The SAK Solution: `Channel<Route>`**
-`SakRuntime` uses a `Channel(BUFFERED)` exposed as a `Flow<Route>`. 
-A Channel is a *hot stream of one-shot events*. When `HarnessApp` collects the route, the event is permanently removed from the queue. Exactly-once delivery guarantees perfectly stable navigation in Compose and SwiftUI.
+1. **Preventing Mutex Starvation:** `FeatureManager.apply()` calculates activation diffs inside a 0.1ms `Mutex` lock, but dispatches `onCreate()` / `onDestroy()` suspend functions concurrently outside the lock using `scope.launch`.
+2. **O(1) Flow Aggregation:** `SakRuntime.allEntryPoints` and `allStatuses` use a `Mutex`-backed concurrent `Map` to update only changed feature entries, avoiding $O(N)$ `combine(vararg)` array allocations.
+3. **Zero-Allocation Primitives:** Domain IDs (`FeatureId`, `EntryPointId`, `Route`) use `@JvmInline value class` for compile-time type safety with zero runtime heap allocation.
+4. **Exactly-Once Event Streams:** Navigation uses a `Channel<Route>(BUFFERED)` exposed via `receiveAsFlow()`, completely eliminating Compose recomposition "double-navigation" bugs.
 
 ---
 
-## 7. Concurrency & Performance Optimizations
+## 9. Framework Roadmap
 
-### A. Preventing Mutex Starvation
-During configuration updates, `FeatureManager.apply()` must determine which features to start and stop. 
-Originally, this ran entirely inside a `Mutex` lock. If a feature's `onCreate()` took 2 seconds to query a database, the entire SDK locked up.
-**Optimization:** We refactored `FeatureManager` to compute the "diff" (what to start/stop) inside the lock (taking 0.1ms), but dispatch the actual `onCreate()` and `onDestroy()` suspend functions concurrently outside the lock via `scope.launch`. Features now bootstrap in parallel.
+### 🛠️ Phase 1: Robustness & Developer Experience
+*   [x] Non-blocking concurrent feature activation.
+*   [x] Zero-allocation `@JvmInline` domain IDs.
+*   [x] Built-in `DebugDashboardScreen` for SAK architecture observability.
+*   [x] Consolidated KDocs and Mermaid documentation.
 
-### B. O(1) Flow Aggregation (Avoiding `combine` overhead)
-`SakRuntime` exposes `allEntryPoints` and `allStatuses`. 
-Originally, this used Coroutines' `combine()` operator over an array of all active feature flows. In Kotlin, `combine` re-allocates a new array and re-evaluates *every* item whenever a *single* item changes. For 50 features, this is $O(N)$ overhead per tick.
-**Optimization:** We replaced `combine` with a targeted `Mutex`-backed `Map`. When `AnalyticsFeature` updates its badge, SAK updates *only* the `Analytics` key in the map, and re-emits. This reduces aggregation overhead to $O(1)$.
+### 🏗️ Phase 2: Core Evolution
+*   [ ] **KSP Feature Auto-Discovery:** Generate `FeatureRegistry` automatically using Kotlin Symbol Processing (`@SakFeature` annotation).
+*   [ ] **Type-Safe Navigation Contracts:** Replace string-based routes with compile-time checked Kotlin `RouteContract` objects.
+*   [ ] **DI Framework Bridges:** Official bridge utilities for Koin and Hilt inside features.
 
-### C. Zero-Allocation Primitives (`@JvmInline value class`)
-IDs like `FeatureId`, `EntryPointId`, and `Route` are passed around thousands of times a minute in a busy UI. Using standard `data class` wrappers causes extreme heap churn and Garbage Collection stutter.
-**Optimization:** SAK uses `@JvmInline value class FeatureId(val value: String)`. At compile-time, developers get strict type safety (you cannot pass a `String` into a `FeatureId` slot). At runtime, the JVM completely erases the class and uses raw `String`s, resulting in zero memory allocations.
+### 🚀 Phase 3: Platform Expansion
+*   [ ] **SwiftUI Native View Macros:** Expand `SakIosBridge` for Swift 6 macros.
+*   [ ] **Compose Desktop & Wasm Support:** Target WebAssembly and Desktop (JVM) targets for universal multiplatform super-apps.
+
+---
+
+## 10. File-by-File Reference
+
+### `sak.sdk.feature`
+*   **`Feature.kt`**: Core plugin contract. Implements `LifecycleOwner`.
+*   **`BaseFeature.kt`**: Abstract implementation handling `LifecycleRegistry` and state flows.
+*   **`FeatureContext.kt`**: The sandbox injected into features (Scope, Navigation, Services).
+*   **`FeatureTypes.kt`**: `@JvmInline` IDs, `FeatureState`, `FeatureStatus`.
+
+### `sak.sdk.entry`
+*   **`EntryPoint.kt`**: The Micro-Frontend UI descriptor.
+*   **`EntryTypes.kt`**: `@JvmInline EntryPointId`, enums for layout hints (`EntryStyle`, `EntryPointType`), and `EntryAction`.
+
+### `sak.sdk.service`
+*   **`FeatureService.kt`**: Container mapping a `KClass` interface to an implementation.
+*   **`ServiceLookup.kt`**: The Service Locator interface with a reified `get<T>()` extension.
+
+### `sak.sdk.config` & `sak.sdk.license`
+*   **`SakConfig.kt`**: The JSON payload controlling the runtime state.
+*   **`FeatureAccess.kt`**: The enablement boolean and remote config `params`.
+*   **`FeatureEntitlements.kt`**: Functional interface for Gate #2 (Licensing).
+
+### `sak.runtime`
+*   **`SakRuntime.kt`**: Public engine facade. Merges configs, hosts the exact-once Navigation Channel, and aggregates EntryPoint flows.
+*   **`FeatureManager.kt`**: Internal orchestrator. Evaluates the 3 Gates, proxies Host OS lifecycle events (e.g., `ON_STOP`), and safely bootstraps features concurrently.
+*   **`FeatureRegistry.kt`**: Gate #1. Stores lazy factories of compiled features.
+*   **`ServiceRegistry.kt`**: Internal backing for `ServiceLookup`, merging Host-provided and Feature-provided APIs.
