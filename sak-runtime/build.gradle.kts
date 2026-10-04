@@ -1,29 +1,33 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    `maven-publish`
 }
 
 kotlin {
     androidTarget {
+        publishLibraryVariants("release")
         compilations.all {
             compileTaskProvider.configure {
                 compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
             }
         }
     }
-    iosArm64 {
-        binaries.framework {
+
+    val xcf = XCFramework("SakIosBridge")
+    listOf(
+        iosArm64(),
+        iosSimulatorArm64(),
+        iosX64()
+    ).forEach { target ->
+        target.binaries.framework {
             baseName = "SakIosBridge"
             isStatic = true
-        }
-    }
-    iosSimulatorArm64 {
-        binaries.framework {
-            baseName = "SakIosBridge"
-            isStatic = true
+            xcf.add(this)
         }
     }
 

@@ -1,0 +1,172 @@
+name: Release SAK Runtime & SDK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+      draft:
+        description: 'Create as draft release'
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: false
+
+jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version_name }}"
+          else
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Release version: ${VERSION}"
+
+  build-kmp-maven:
+    needs: determine-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build and Publish KMP Maven Artifacts
+        run: |
+          ./gradlew :sak-sdk:publishAllPublicationsToProjectRepositoryRepository \
+                    :sak-runtime:publishAllPublicationsToProjectRepositoryRepository \
+                    -PVERSION_NAME=${{ needs.determine-version.outputs.version }}
+
+      - name: Build Android AARs
+        run: |
+          ./gradlew :sak-sdk:assembleRelease \
+                    :sak-runtime:assembleRelease \
+                    -PVERSION_NAME=${{ needs.determine-version.outputs.version }}
+
+      - name: Package Maven Repository
+        run: |
+          cd build/repo
+          zip -r ../../sak-kmp-maven-repository.zip .
+          cd ../..
+
+      - name: Prepare Android AAR Artifacts
+        run: |
+          mkdir -p build/release-aars
+          find sak-sdk/build/outputs/aar/ -name "*release*.aar" -exec cp {} build/release-aars/sak-sdk-release.aar \; 2>/dev/null || true
+          find sak-runtime/build/outputs/aar/ -name "*release*.aar" -exec cp {} build/release-aars/sak-runtime-release.aar \; 2>/dev/null || true
+
+      - name: Upload KMP Maven Repo Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: sak-kmp-maven-repository
+          path: sak-kmp-maven-repository.zip
+
+      - name: Upload Android AARs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aars
+          path: build/release-aars/*.aar
+
+  build-ios-xcframework:
+    needs: determine-version
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build SakIosBridge XCFramework
+        run: |
+          ./gradlew :sak-runtime:assembleSakIosBridgeXCFramework \
+                    -PVERSION_NAME=${{ needs.determine-version.outputs.version }}
+
+      - name: Package SakIosBridge XCFramework
+        run: |
+          cd sak-runtime/build/XCFrameworks/release
+          zip -r ../../../../SakIosBridge.xcframework.zip SakIosBridge.xcframework
+          cd ../../../..
+
+      - name: Upload iOS XCFramework Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: SakIosBridge.xcframework
+          path: SakIosBridge.xcframework.zip
+
+  create-github-release:
+    needs: [determine-version, build-kmp-maven, build-ios-xcframework]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Maven Repo Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sak-kmp-maven-repository
+          path: release-assets/
+
+      - name: Download Android AARs Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-aars
+          path: release-assets/
+
+      - name: Download iOS XCFramework Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SakIosBridge.xcframework
+          path: release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', needs.determine-version.outputs.version) || github.ref_name }}
+          name: SAK Runtime & SDK v${{ needs.determine-version.outputs.version }}
+          draft: ${{ inputs.draft || false }}
+          prerelease: ${{ inputs.prerelease || false }}
+          files: |
+            release-assets/sak-kmp-maven-repository.zip
+            release-assets/SakIosBridge.xcframework.zip
+            release-assets/*.aar
+          generate_release_notes: true
+          body: |
+            ## SAK (Scalable App Kit) Release v${{ needs.determine-version.outputs.version }}
+
+            ### Release Artifacts:
+            * **`SakIosBridge.xcframework.zip`**: iOS Static/Dynamic XCFramework for `sak-runtime` (supporting iOS Arm64, iOS Simulator Arm64 & x86_64).
+            * **`sak-kmp-maven-repository.zip`**: Complete Kotlin Multiplatform Maven Repository containing `sak-sdk` and `sak-runtime` release binaries (Android AAR, JVM JAR, iOS klibs, and POM metadata).
+            * **`sak-sdk-release.aar`**: Standalone Android AAR for `sak-sdk`.
+            * **`sak-runtime-release.aar`**: Standalone Android AAR for `sak-runtime`.

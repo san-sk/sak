@@ -4,10 +4,12 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    `maven-publish`
 }
 
 kotlin {
     androidTarget {
+        publishLibraryVariants("release")
         compilations.all {
             compileTaskProvider.configure {
                 compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
@@ -24,6 +26,7 @@ kotlin {
     }
     iosArm64()
     iosSimulatorArm64()
+    iosX64()
 
     sourceSets {
         commonMain.dependencies {
@@ -44,3 +47,4 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
     }
 }
+

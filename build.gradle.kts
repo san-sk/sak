@@ -8,6 +8,20 @@ plugins {
 }
 
 subprojects {
+    group = findProperty("GROUP")?.toString() ?: "sak"
+    version = findProperty("VERSION_NAME")?.toString() ?: "1.0.0"
+
+    plugins.withId("maven-publish") {
+        configure<PublishingExtension> {
+            repositories {
+                maven {
+                    name = "ProjectRepository"
+                    url = uri(rootProject.layout.buildDirectory.dir("repo"))
+                }
+            }
+        }
+    }
+
     plugins.withId("com.android.library") {
         extensions.configure<com.android.build.gradle.LibraryExtension> {
             compileOptions {

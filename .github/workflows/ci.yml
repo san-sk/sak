@@ -1,0 +1,33 @@
+name: CI (SDK & Runtime)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Unit Tests (SDK & Runtime)
+        run: ./gradlew :sak-sdk:allTests :sak-runtime:allTests
+
+      - name: Assemble Release Artifacts (SDK & Runtime)
+        run: ./gradlew :sak-sdk:assembleRelease :sak-runtime:assembleRelease
+
+      - name: Validate Maven Publication
+        run: ./gradlew :sak-sdk:publishAllPublicationsToProjectRepositoryRepository :sak-runtime:publishAllPublicationsToProjectRepositoryRepository
